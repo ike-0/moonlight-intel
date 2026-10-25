@@ -700,11 +700,12 @@ Native?) is still unanswered.
   dithering step.
 - The early windows have only 157–308 frames per 5 s, with 571–597 later. That looks like the
   host sending fewer frames for static content; it isn't a render issue.
-- **Observation, not a bug:** the SDR pass takes about 0.66 ms, against 0.33–0.47 ms for HDR,
-  with the same single pass and no extra steps.
-  - A likely cause is a lower GPU clock while the desktop is SDR, but that hasn't been measured.
-  - It is still about 8 % of the 8.33 ms frame. Worth a `gputop` look in plan 0003, when the
-    upscaler adds real GPU work.
+- **Power source, not SDR:** the SDR pass took about 0.66 ms, against 0.33–0.47 ms in the HDR
+  runs. The user confirmed the HDR runs were on the charger and the G run on battery.
+  - On battery the GPU runs the same single pass about 1.5× slower.
+  - Every GPU timing comparison must state AC or battery; `docs/arch.md` now says so.
+  - 0.66 ms is still about 8 % of the 8.33 ms frame. Plan 0003's upscaler budget should be
+    checked on battery too.
 - **Open:** the second half of G (setting off → `Renderer 'EGL/GLES'`).
 
 **Found, not changed:** with "Vulkan for SDR" on, `getDecoderInfo()`'s HEVC 8-bit probe would

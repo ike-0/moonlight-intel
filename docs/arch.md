@@ -104,6 +104,9 @@ gputop -d 1 -n 5 | grep -aE 'Frequency|PID|moonlight|gnome-shell'
 grep -E 'moonlight-intel:|renderer|Renderer|HDR|present mode|libplacebo: (Using|Vulkan)|swapchain' /tmp/ml.log
 ```
 
+GPU timings depend on the power source: the same libplacebo pass measured ~0.4 ms on the
+charger and ~0.66 ms on battery (plan 0002). Always note AC or battery when comparing numbers.
+
 Useful while streaming: the stats overlay (Ctrl+Alt+Shift+S) shows decode and render time,
 frame drops and network latency, plus the fork's lines when libplacebo renders: video GPU time,
 the scaling step, the output colour space and the desktop-HDR state. More libplacebo detail: `PLVK_LOG_LEVEL=4` (info), which also
