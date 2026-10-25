@@ -243,6 +243,25 @@ HEADERS += \
     streaming/video/overlaymanager.h \
     backend/systemproperties.h
 
+# moonlight-intel: fork module (docs/FORK.md). Must not depend on libplacebo.
+SOURCES += \
+    fork/fork.cpp \
+    fork/intelpreferences.cpp \
+    fork/renderstats.cpp \
+    fork/desktophdr.cpp
+HEADERS += \
+    fork/fork.h \
+    fork/intelpreferences.h \
+    fork/renderstats.h \
+    fork/desktophdr.h \
+    fork/desktophdrbackend.h
+linux:qtHaveModule(dbus) {
+    QT += dbus
+    DEFINES += HAVE_GNOME_DISPLAY_CONFIG
+    SOURCES += fork/gnomedisplayconfig.cpp
+    HEADERS += fork/gnomedisplayconfig.h
+}
+
 # Platform-specific renderers and decoders
 ffmpeg {
     message(FFmpeg decoder selected)
