@@ -12,6 +12,7 @@
 
 #include <string> // moonlight-intel
 #include <vector> // moonlight-intel
+#include "fork/renderstats.h" // moonlight-intel
 
 #ifdef Q_OS_DARWIN
 class MetalVulkanTextureFactory {
@@ -155,23 +156,39 @@ private:
     PFN_vkEnumerateDeviceExtensionProperties fn_vkEnumerateDeviceExtensionProperties = nullptr;
 
     // moonlight-intel: render params for video frames (defaults to pl_render_fast_params),
-    // frame/swapchain info logging, and opt-in GPU timing via MOONLIGHT_INTEL_GPU_TIMING=1
+    // frame/swapchain info logging, GPU timing and render stats for the stats overlay. GPU time
+    // is always measured; the log is opt-in (setting or MOONLIGHT_INTEL_GPU_TIMING=1).
     static void gpuTimingCallback(void* priv, const pl_render_info* info);
     void logFrameInfo(const pl_frame* source);
-    void recordGpuTime();
+    void recordRenderStats(const pl_frame* source, const pl_frame* target);
+    void publishRenderStats(const pl_frame* source, const pl_frame* target);
+    void logGpuTime(Uint32 now);
 
     struct GpuPass {
         std::string description;
         uint64_t lastNs;
         uint64_t averageNs;
+        bool overlay;
     };
 
     pl_render_params m_RenderParams;
     int m_LastFrameInfo[8] = {};
-    uint64_t m_GpuTimeFrameNs = 0;
+
+    // Current frame, summed by gpuTimingCallback()
+    uint64_t m_GpuTimeFrameNs = 0;    // video passes, i.e. all but the OSD overlay
+    uint64_t m_GpuScalingFrameNs = 0; // scaler passes
+    std::vector<GpuPass> m_GpuTimePasses;
+
+    // ~1 s window published to the stats overlay
+    Fork::RenderStatsPublisher m_RenderStats;
+    std::vector<uint64_t> m_StatsSamplesNs;
+    uint64_t m_StatsScalingNs = 0;
+    Uint32 m_StatsWindowStart = 0;
+
+    // 5 s log window
+    bool m_GpuTimeLogEnabled = false;
     std::vector<uint64_t> m_GpuTimeSamplesNs;
     int m_GpuTimeSkippedFrames = 0;
     Uint32 m_GpuTimeWindowStart = 0;
-    std::vector<GpuPass> m_GpuTimePasses;
     bool m_GpuTimePassesLogged = false;
 };
