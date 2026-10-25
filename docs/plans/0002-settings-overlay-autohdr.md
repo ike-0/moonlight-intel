@@ -416,13 +416,13 @@ worker:
       returns `nullptr`.
 - [ ] Settings page shows the `moonlight-intel` group at the end of the right column. Values
       persist across restarts under `[moonlight-intel]`; existing settings unchanged.
-- [ ] Overlay shows the GPU, Scaling and Output lines during a plvk stream. Toggling the overlay
+- [x] Overlay shows the GPU, Scaling and Output lines during a plvk stream. Toggling the overlay
       on/off doesn't shift the logged `gpu-time(video)` value beyond noise.
 - [x] With the setting on and the panel in SDR Native, an HDR stream switches the panel to HDR
       with no dialog, and the overlay shows `desktop HDR: on (auto, …)`.
 - [ ] Quitting the stream restores **SDR Native** (not "default"). `monitors.xml` is unchanged.
 - [ ] Panel already in HDR before the stream → untouched during the stream and left in HDR after.
-- [ ] `kill -9` of Moonlight mid-stream → the next Moonlight launch restores SDR Native.
+- [x] `kill -9` of Moonlight mid-stream → the next Moonlight launch restores SDR Native.
 - [ ] Fullscreen-only mode: windowed → SDR Native; fullscreen → HDR after ~2 s; back to windowed
       → SDR Native after ~2 s.
 - [ ] Setting Off → no D-Bus writes (log shows none).
@@ -612,6 +612,18 @@ Executed locally on the laptop (2026-10-25). The remaining criteria need the har
 - **Fix:** a pass is an overlay pass when its **first** step is `"overlay"`. Each overlay is
   drawn by a fresh shader that starts with that step, and no video pass does. Test B rechecks
   it.
+
+**After the fix:**
+- **B. Overlay timing:** with the overlay on, the overlay reads
+  `GPU render (video): 0.47 ms avg / 0.53 p99 / 0.55 max`.
+  - The log's six 5 s windows, overlay on and off, read 0.33–0.47 avg, 0.47–0.53 p99 and
+    ≤ 0.56 ms max (591–598 frames each). That is the 0001 baseline range.
+  - The one-time pass list now shows the split:
+    - `gpu-pass[0] … 0.467 ms: color decoding, color encoding`;
+    - `gpu-pass[1] … 0.159 ms: overlay, color decoding, colorspace conversion, color encoding
+      (overlay, not in video time)`.
+- **D. Crash recovery:** after `kill -9` mid-stream the panel stayed in HDR. The next launch
+  restored `sdr-native`.
 
 **Found, not changed:** with "Vulkan for SDR" on, `getDecoderInfo()`'s HEVC 8-bit probe would
 also try plvk. On the target the HEVC Main10 probe succeeds first and returns, so that probe
