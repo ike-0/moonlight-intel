@@ -93,6 +93,14 @@ this repo at `intel` + PR 1. Line numbers are approximate; re-check them.
   moonlight-common-c's connection thread. It is re-applied after decoder creation
   (~L2253, `LiGetCurrentHostDisplayHdrMode()`). `clSetHdrMode` drops the call if the decoder
   lock is busy.
+- **Measured on the laptop after PR 1 (2026-10-25)**, HDR stream 1920×1200@120, HEVC:
+  - HDR10 PQ reaches Vulkan on GNOME: the swapchain went `BT.709/sRGB hdr=off` →
+    `BT.2020/PQ hdr=on` on frame 2. The swapchain is native 2880×1800 at 166% scale.
+  - libplacebo time: 0.48 ms avg / 0.52 ms p99, in one fused pass,
+    `"color decoding, color encoding"`.
+  - The `Using Mailbox present mode with V-Sync disabled` warnings come only from the test-only
+    decoder probes, which always run with V-Sync off (`session.cpp` ~L288 asserts
+    `!enableVsync || !testOnly`). The real stream uses FIFO and logs nothing.
 - **Surface formats are cached.** libplacebo enumerates them only in
   `pl_vulkan_create_swapchain()` (`src/vulkan/swapchain.c` ~L429). If Mesa only exposes HDR10 PQ
   while the output is in HDR mode, a swapchain created before the switch stays SDR until
@@ -252,7 +260,15 @@ it at runtime.
   ```
   - Frame budget = 1000 / stream fps.
   - Scaling: show `downscale (x0.90)` or `1:1` when applicable.
-  - Output transfer/primaries: libplacebo short names.
+  - Output transfer/primaries: a **fork-local short-name table**. libplacebo only has long
+    descriptive names; `pl_color_transfer_name(PL_COLOR_TRC_PQ)` is
+    `"ITU-R BT.2100 PQ (perceptual quantizer), aka SMPTE ST2048"` (sic), which is too long for
+    the overlay.
+    - Primaries: BT.709 → `BT.709`, BT.2020 → `BT.2020`, DCI-P3 / Display-P3 → `P3`.
+    - Transfer: sRGB → `sRGB`, BT.1886 → `BT.1886`, PQ → `PQ`, HLG → `HLG`,
+      gamma 2.2 → `G2.2`, linear → `linear`.
+    - Anything else → `prim#N` / `trc#N`.
+    - The 0001 `frame` log line keeps the long names.
   - Desktop-HDR states: `off (setting)`, `unavailable`, `waiting for host HDR`,
     `on (auto, <connector>)`, `on (already on)`, `switching…`, `restored`,
     `failed: <short reason>`.
