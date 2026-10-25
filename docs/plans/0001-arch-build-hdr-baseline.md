@@ -224,7 +224,7 @@ HEVC run was skipped; the baseline is AV1.
 - **Compositor.** gnome-shell spends ~5 % of render-engine time while the stream is fullscreen
   (≈ 0.4 ms per frame). That suggests Mutter composites the HDR surface instead of scanning it
   out directly. This is noted for a possible later investigation; it isn't a blocker.
-- **Run C** (GNOME in SDR Native with an HDR stream) is folded into plan 0002's hardware test A.
+- **Run C** (GNOME in SDR Native with an HDR stream) is folded into plan 0002's hardware test F (setting Off, GNOME in SDR Native): check whether the second `frame` line reaches `hdr=on`.
 
 ## Risks and upstream-merge impact
 
