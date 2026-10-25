@@ -16,6 +16,7 @@ extern "C" {
 
 #include <vector>
 #include <set>
+#include <algorithm> // moonlight-intel
 
 #ifndef VK_KHR_video_decode_av1
 #define VK_KHR_VIDEO_DECODE_AV1_EXTENSION_NAME "VK_KHR_video_decode_av1"
@@ -154,6 +155,13 @@ PlVkRenderer::PlVkRenderer(AVHWDeviceType hwDeviceType, IFFmpegRenderer *backend
     }
 
     m_Log = pl_log_create(PL_API_VER, &logParams);
+
+    // moonlight-intel: own copy of the render params; the timing callback is opt-in
+    m_RenderParams = pl_render_fast_params;
+    if (qEnvironmentVariableIntValue("MOONLIGHT_INTEL_GPU_TIMING")) {
+        m_RenderParams.info_callback = gpuTimingCallback;
+        m_RenderParams.info_priv = this;
+    }
 }
 
 PlVkRenderer::~PlVkRenderer()
@@ -1088,11 +1096,13 @@ void PlVkRenderer::renderFrame(AVFrame *frame)
     // Render the video image and overlays into the swapchain buffer
     targetFrame.num_overlays = (int)overlays.size();
     targetFrame.overlays = overlays.data();
-    if (!pl_render_image(m_Renderer, &mappedFrame, &targetFrame, &pl_render_fast_params)) {
+    logFrameInfo(&mappedFrame); // moonlight-intel
+    if (!pl_render_image(m_Renderer, &mappedFrame, &targetFrame, &m_RenderParams)) { // moonlight-intel: m_RenderParams
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "pl_render_image() failed");
         // NB: We must fallthrough to call pl_swapchain_submit_frame()
     }
+    recordGpuTime(); // moonlight-intel
 
     // Submit the frame for display and swap buffers
     m_HasPendingSwapchainFrame = false;
@@ -1379,4 +1389,111 @@ AVPixelFormat PlVkRenderer::getPreferredPixelFormat(int videoFormat)
     else {
         return AV_PIX_FMT_VULKAN;
     }
+}
+
+// moonlight-intel: logs swapchain and source size/colour space on the first frame and on any
+// change. Expect the first line to show the SDR swapchain: libplacebo only applies the colour
+// space hint from renderFrame() when it recreates the swapchain at the next start_frame.
+void PlVkRenderer::logFrameInfo(const pl_frame* source)
+{
+    const pl_color_space& swapchainColor = m_SwapchainFrame.color_space;
+    int info[] = {
+        m_SwapchainFrame.fbo->params.w, m_SwapchainFrame.fbo->params.h,
+        swapchainColor.primaries, swapchainColor.transfer,
+        (int)pl_rect_w(source->crop), (int)pl_rect_h(source->crop),
+        source->color.primaries, source->color.transfer,
+    };
+    static_assert(sizeof(info) == sizeof(m_LastFrameInfo), "m_LastFrameInfo size mismatch");
+
+    if (memcmp(info, m_LastFrameInfo, sizeof(info)) == 0) {
+        return;
+    }
+    memcpy(m_LastFrameInfo, info, sizeof(info));
+
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "moonlight-intel: frame swapchain=%dx%d %s/%s hdr=%s source=%dx%d %s/%s",
+                info[0], info[1],
+                pl_color_primaries_name(swapchainColor.primaries),
+                pl_color_transfer_name(swapchainColor.transfer),
+                pl_color_space_is_hdr(&swapchainColor) ? "on" : "off",
+                info[4], info[5],
+                pl_color_primaries_name(source->color.primaries),
+                pl_color_transfer_name(source->color.transfer));
+}
+
+// moonlight-intel: called by libplacebo for each shader pass inside pl_render_image()
+void PlVkRenderer::gpuTimingCallback(void* priv, const pl_render_info* info)
+{
+    auto me = (PlVkRenderer*)priv;
+
+    me->m_GpuTimeFrameNs += info->pass->last;
+
+    if (!me->m_GpuTimePassesLogged) {
+        const char* description = info->pass->shader->description;
+        me->m_GpuTimePasses.push_back({ description ? description : "?",
+                                        info->pass->last, info->pass->average });
+    }
+}
+
+// moonlight-intel: called after each pl_render_image(). Pass timers are read back
+// asynchronously, so values lag a frame or two and read 0 at first; zero frames are skipped.
+void PlVkRenderer::recordGpuTime()
+{
+    if (m_RenderParams.info_callback == nullptr) {
+        return;
+    }
+
+    if (m_GpuTimeFrameNs > 0) {
+        m_GpuTimeSamplesNs.push_back(m_GpuTimeFrameNs);
+    }
+    else {
+        m_GpuTimeSkippedFrames++;
+    }
+
+    Uint32 now = SDL_GetTicks();
+    if (m_GpuTimeWindowStart == 0) {
+        m_GpuTimeWindowStart = now;
+    }
+    else if (now - m_GpuTimeWindowStart >= 5000) {
+        if (m_GpuTimeSamplesNs.empty()) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "moonlight-intel: gpu-time no timer data skipped=%d",
+                        m_GpuTimeSkippedFrames);
+        }
+        else {
+            uint64_t sumNs = 0, maxNs = 0;
+            for (uint64_t ns : m_GpuTimeSamplesNs) {
+                sumNs += ns;
+                maxNs = SDL_max(maxNs, ns);
+            }
+
+            auto p99 = m_GpuTimeSamplesNs.begin() + (m_GpuTimeSamplesNs.size() - 1) * 99 / 100;
+            std::nth_element(m_GpuTimeSamplesNs.begin(), p99, m_GpuTimeSamplesNs.end());
+
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "moonlight-intel: gpu-time avg=%.2f p99=%.2f max=%.2f ms frames=%d skipped=%d",
+                        sumNs / 1e6 / m_GpuTimeSamplesNs.size(), *p99 / 1e6, maxNs / 1e6,
+                        (int)m_GpuTimeSamplesNs.size(), m_GpuTimeSkippedFrames);
+        }
+
+        // Log the pass breakdown once, from a frame that has timer data
+        if (!m_GpuTimePassesLogged && m_GpuTimeFrameNs > 0) {
+            for (size_t i = 0; i < m_GpuTimePasses.size(); i++) {
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                            "moonlight-intel: gpu-pass[%d] last=%.3f avg=%.3f ms: %s",
+                            (int)i,
+                            m_GpuTimePasses[i].lastNs / 1e6,
+                            m_GpuTimePasses[i].averageNs / 1e6,
+                            m_GpuTimePasses[i].description.c_str());
+            }
+            m_GpuTimePassesLogged = true;
+        }
+
+        m_GpuTimeSamplesNs.clear();
+        m_GpuTimeSkippedFrames = 0;
+        m_GpuTimeWindowStart = now;
+    }
+
+    m_GpuTimeFrameNs = 0;
+    m_GpuTimePasses.clear();
 }
