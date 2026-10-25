@@ -1422,20 +1422,12 @@ void PlVkRenderer::logFrameInfo(const pl_frame* source)
                 pl_color_transfer_name(source->color.transfer));
 }
 
-// moonlight-intel: true if every step of the pass draws an OSD overlay (no video work)
+// moonlight-intel: true for OSD overlay passes. libplacebo starts each with an "overlay" step and
+// converts the overlay's colours in the same shader, so the full description is e.g.
+// "overlay, color decoding, colorspace conversion, color encoding" on an HDR target.
 static bool isOverlayPass(pl_shader_info shader)
 {
-    if (shader == nullptr || shader->num_steps == 0) {
-        return false;
-    }
-
-    for (int i = 0; i < shader->num_steps; i++) {
-        if (strcmp(shader->steps[i], "overlay") != 0) {
-            return false;
-        }
-    }
-
-    return true;
+    return shader != nullptr && shader->num_steps > 0 && strcmp(shader->steps[0], "overlay") == 0;
 }
 
 // moonlight-intel: true for libplacebo's scaler passes, "<stage> upscaling (<filter>)" and

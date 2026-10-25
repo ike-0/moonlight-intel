@@ -418,7 +418,7 @@ worker:
       persist across restarts under `[moonlight-intel]`; existing settings unchanged.
 - [ ] Overlay shows the GPU, Scaling and Output lines during a plvk stream. Toggling the overlay
       on/off doesn't shift the logged `gpu-time(video)` value beyond noise.
-- [ ] With the setting on and the panel in SDR Native, an HDR stream switches the panel to HDR
+- [x] With the setting on and the panel in SDR Native, an HDR stream switches the panel to HDR
       with no dialog, and the overlay shows `desktop HDR: on (auto, …)`.
 - [ ] Quitting the stream restores **SDR Native** (not "default"). `monitors.xml` is unchanged.
 - [ ] Panel already in HDR before the stream → untouched during the stream and left in HDR after.
@@ -567,9 +567,6 @@ Executed locally on the laptop (2026-10-25). The remaining criteria need the har
   (`Fork::RenderStatsPublisher`), not by a line in `~PlVkRenderer`, so plvk gets no new hook
   site. It clears only if it was the last publisher, so a probe renderer being destroyed can't
   blank a live one.
-- **Overlay pass detection.** An overlay pass is one whose shader *steps* are all `"overlay"`.
-  This equals "description is exactly `overlay`" in the normal case, and also handles
-  libplacebo's tallied form (`overlay ×2`).
 - **Scaling bucket.** It matches `"scaling ("` steps only. libplacebo gives no generic marker for
   user-hook passes, so plan 0003 should match its own hooks' `//!DESC` in `isScalingPass()`.
 - **Build scope.** The GNOME backend builds under `linux:qtHaveModule(dbus)` with a
@@ -585,6 +582,36 @@ Executed locally on the laptop (2026-10-25). The remaining criteria need the har
 - Step 1 assumed the repo root as the working directory. Run from `build/`, it made
   `build/build/` and couldn't find `../moonlight-qt.pro`. It now starts with
   `cd ~/repos/moonlight-intel`.
+
+**Hardware test results (user, 2026-10-25):**
+- **A. Auto switch:** the panel switched to HDR on stream start. The overlay showed:
+  ```
+  GPU render (video): 0.61 ms avg / 0.63 p99 / 0.66 max of 8.33 ms frame
+  Scaling: 1920x1200 -> 2880x1800 (x1.50), bilinear
+  Output: 2880x1800 PQ BT.2020, desktop HDR: on (auto, eDP-1)
+  ```
+  - Host 120.58 fps, rendered 119.59 fps, 0.82 % "network jitter" drops, 7.69 ms frame queue
+    delay, 0.83 ms decode.
+  - The ~1 fps of drops matches the host sending about 0.6–1 fps more than the 120 Hz panel
+    shows. That is upstream pacer behaviour, not fork behaviour.
+
+**Bug found in test A: the overlay pass was counted as video GPU time.**
+- 0.61 ms is above the 0001 baseline of 0.35–0.47 ms, although it is meant to exclude the
+  overlay. That baseline was most likely measured with the overlay off: its overlay values
+  weren't recorded.
+- The plan's fact "the OSD pass is `"overlay"`" holds only for its first step. libplacebo
+  7.360.1 (`src/renderer.c` L945–978) converts the overlay's colours in the same shader.
+- A headless libplacebo run on this GPU, with plvk's sRGB overlay on an HDR10 source, prints
+  these pass descriptions:
+  - PQ BT.2020 target: `overlay, color decoding, colorspace conversion, color encoding`;
+  - sRGB target: `overlay, color decoding, color encoding`;
+  - the video pass, in both cases: `color decoding, color encoding` on PQ, plus tone and gamut
+    mapping on sRGB.
+- So neither the planned "description is exactly `overlay`" nor the first implementation ("every
+  step is `overlay`") matched it.
+- **Fix:** a pass is an overlay pass when its **first** step is `"overlay"`. Each overlay is
+  drawn by a fresh shader that starts with that step, and no video pass does. Test B rechecks
+  it.
 
 **Found, not changed:** with "Vulkan for SDR" on, `getDecoderInfo()`'s HEVC 8-bit probe would
 also try plvk. On the target the HEVC Main10 probe succeeds first and returns, so that probe
