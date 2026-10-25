@@ -424,7 +424,8 @@ worker:
 - [x] Panel already in HDR before the stream → untouched during the stream and left in HDR after.
 - [x] `kill -9` of Moonlight mid-stream → the next Moonlight launch restores SDR Native.
 - [ ] Fullscreen-only mode: windowed → SDR Native; fullscreen → HDR after ~2 s; back to windowed
-      → SDR Native after ~2 s.
+      → SDR Native after ~2 s. Fullscreen but not in front (overview, other workspace or window)
+      → SDR Native after ~2 s; back to the stream → HDR after ~2 s.
 - [ ] Setting Off → no D-Bus writes (log shows none).
 - [ ] SDR stream with the SDR-Vulkan setting on → log `Renderer 'Vulkan (libplacebo)' with 'VAAPI'
       backend chosen`, and the overlay lines appear. Setting off → `Renderer 'EGL/GLES' …`, as
@@ -471,8 +472,12 @@ streams", GPU timing log **on**.
 - **D. Crash recovery:** start a stream (panel goes HDR), then in another terminal
   `pkill -9 -f '^./app/moonlight'`. The panel stays HDR. Launch `./app/moonlight` again: the
   panel returns to SDR Native at launch.
-- **E. Fullscreen-only:** set "During HDR streams, fullscreen only". Start the stream,
-  Ctrl+Alt+Shift+X to windowed (SDR Native after ~2 s), and back (HDR after ~2 s).
+- **E. Fullscreen-only:** set "During HDR streams, only while fullscreen and in front". Start the
+  stream, Ctrl+Alt+Shift+X to windowed (SDR Native after ~2 s), and back (HDR after ~2 s).
+  - Then, still fullscreen, swipe up with three fingers (overview) or switch workspace: SDR Native
+    after ~2 s. Back to the stream: HDR after ~2 s.
+  - A peek shorter than 2 s doesn't switch. While the stream is out of front, the overlay
+    shows `waiting for focus` or `restored`.
 - **F. Off (doubles as 0001's Run C):** set Off, GNOME in SDR Native, and stream HDR.
   - The panel must not change, and the log has no `desktop-hdr` writes.
   - Note whether the second `frame` line reaches `BT.2020/PQ hdr=on`. If yes, Mesa offers PQ
@@ -628,6 +633,28 @@ Executed locally on the laptop (2026-10-25). The remaining criteria need the har
   `Output: 2880x1800 PQ BT.2020, desktop HDR: on (already on)`, and HDR stayed on after
   quitting. Video GPU time: 0.48 avg / 0.53 p99 / 0.57 max ms.
 - **monitors.xml:** `sha256sum -c /tmp/ml-0002-monitors.sha` → `OK` after tests A–D.
+- **E. Fullscreen-only, first build:** Ctrl+Alt+Shift+X switching worked as planned. But a
+  three-finger swipe up (overview) or a workspace switch left the panel in HDR, because the
+  stream window stays fullscreen there.
+
+**Change after test E (user decision):**
+- Fullscreen-only mode now also requires the stream window to have keyboard focus. GNOME takes
+  focus away for the overview, another workspace or Alt+Tab.
+- The mode's label is now "During HDR streams, only while fullscreen and in front", and the
+  tooltip explains it.
+- "During HDR streams" still ignores focus.
+- The focus state comes from the existing window-event hook (`SDL_WINDOW_INPUT_FOCUS`), so there
+  is no new upstream line.
+- New overlay state: `waiting for focus`.
+- The controller harness adds 8 checks:
+  - unfocused start;
+  - HDR 2 s after focus;
+  - a 1 s peek doesn't switch;
+  - SDR 2 s after focus loss;
+  - HDR 2 s after focus returns;
+  - restore at session end;
+  - "During HDR streams" ignores focus.
+- Criterion and test E are extended accordingly and need a re-run.
 
 **Found, not changed:** with "Vulkan for SDR" on, `getDecoderInfo()`'s HEVC 8-bit probe would
 also try plvk. On the target the HEVC Main10 probe succeeds first and returns, so that probe

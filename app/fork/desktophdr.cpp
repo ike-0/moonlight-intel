@@ -29,7 +29,7 @@
 // Debounce, in ms. Entering in "during HDR streams" mode needs no hold time.
 #define ENTER_DELAY_FULLSCREEN_ONLY_MS 2000
 #define LEAVE_DELAY_HOST_SDR_MS 3000
-#define LEAVE_DELAY_WINDOWED_MS 2000
+#define LEAVE_DELAY_NOT_IN_FRONT_MS 2000
 
 // How long after a switch the swapchain must be HDR before the renderer is recreated
 #define FALLBACK_CHECK_DELAY_MS 2000
@@ -112,10 +112,10 @@ void DesktopHdrController::stop()
     }
 }
 
-void DesktopHdrController::sessionStarted(IntelPreferences::DesktopHdrMode mode, bool fullscreen, const QString& displayName)
+void DesktopHdrController::sessionStarted(IntelPreferences::DesktopHdrMode mode, bool fullscreen, bool focused, const QString& displayName)
 {
-    QMetaObject::invokeMethod(this, [this, mode, fullscreen, displayName] {
-        startSession(mode, fullscreen, displayName);
+    QMetaObject::invokeMethod(this, [this, mode, fullscreen, focused, displayName] {
+        startSession(mode, fullscreen, focused, displayName);
     }, Qt::QueuedConnection);
 }
 
@@ -129,9 +129,9 @@ void DesktopHdrController::notifyHostHdr(bool enabled)
     }, Qt::QueuedConnection);
 }
 
-void DesktopHdrController::notifyWindowState(bool fullscreen, const QString& displayName)
+void DesktopHdrController::notifyWindowState(bool fullscreen, bool focused, const QString& displayName)
 {
-    QMetaObject::invokeMethod(this, [this, fullscreen, displayName] {
+    QMetaObject::invokeMethod(this, [this, fullscreen, focused, displayName] {
         if (m_Phase == Phase::Idle) {
             return;
         }
@@ -141,8 +141,9 @@ void DesktopHdrController::notifyWindowState(bool fullscreen, const QString& dis
         if (!displayName.isEmpty()) {
             m_DisplayName = displayName;
         }
-        if (m_Fullscreen != fullscreen) {
+        if (m_Fullscreen != fullscreen || m_Focused != focused) {
             m_Fullscreen = fullscreen;
+            m_Focused = focused;
             evaluate();
         }
     }, Qt::QueuedConnection);
@@ -206,7 +207,7 @@ void DesktopHdrController::initializeWorker()
     emit availabilityChanged(m_Available, reason);
 }
 
-void DesktopHdrController::startSession(IntelPreferences::DesktopHdrMode mode, bool fullscreen, const QString& displayName)
+void DesktopHdrController::startSession(IntelPreferences::DesktopHdrMode mode, bool fullscreen, bool focused, const QString& displayName)
 {
     // Sessions always end before the next starts, but never keep a display in HDR across them
     if (m_Phase != Phase::Idle) {
@@ -216,6 +217,7 @@ void DesktopHdrController::startSession(IntelPreferences::DesktopHdrMode mode, b
     m_Mode = mode;
     m_HostHdr = false; // the session reports the host state once its decoder exists
     m_Fullscreen = fullscreen;
+    m_Focused = focused;
     m_DisplayName = displayName;
     m_Restored = false;
     m_FallbackUsed = false;
@@ -252,9 +254,16 @@ void DesktopHdrController::endSession()
     setStatus(QString());
 }
 
+// Fullscreen-only mode wants the stream fullscreen and in front: the overview, another
+// workspace or Alt+Tab keep the window fullscreen but take its focus
+bool DesktopHdrController::streamInFront() const
+{
+    return m_Fullscreen && m_Focused;
+}
+
 bool DesktopHdrController::wantHdr() const
 {
-    return m_HostHdr && (m_Mode == IntelPreferences::DHM_HDR_STREAMS || m_Fullscreen);
+    return m_HostHdr && (m_Mode == IntelPreferences::DHM_HDR_STREAMS || streamInFront());
 }
 
 QString DesktopHdrController::waitingStatus() const
@@ -263,7 +272,11 @@ QString DesktopHdrController::waitingStatus() const
         return "restored";
     }
 
-    return m_HostHdr ? "waiting for fullscreen" : "waiting for host HDR";
+    if (!m_HostHdr) {
+        return "waiting for host HDR";
+    }
+
+    return m_Fullscreen ? "waiting for focus" : "waiting for fullscreen";
 }
 
 // Starts or cancels the debounce timer for the transition the inputs ask for. The condition
@@ -290,7 +303,7 @@ void DesktopHdrController::evaluate()
             delayMs = fullscreenOnly ? ENTER_DELAY_FULLSCREEN_ONLY_MS : 0;
         }
         else {
-            delayMs = (fullscreenOnly && !m_Fullscreen) ? LEAVE_DELAY_WINDOWED_MS : LEAVE_DELAY_HOST_SDR_MS;
+            delayMs = (fullscreenOnly && !streamInFront()) ? LEAVE_DELAY_NOT_IN_FRONT_MS : LEAVE_DELAY_HOST_SDR_MS;
         }
         m_TransitionTimer->start(delayMs);
     }

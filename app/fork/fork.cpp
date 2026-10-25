@@ -16,6 +16,11 @@ static bool isFullscreen(SDL_Window* window)
     return SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN;
 }
 
+static bool isFocused(SDL_Window* window)
+{
+    return SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS;
+}
+
 static QString displayName(SDL_Window* window)
 {
     const char* name = SDL_GetDisplayName(SDL_GetWindowDisplayIndex(window));
@@ -54,7 +59,8 @@ bool logGpuTiming()
 void sessionStarted(SDL_Window* window)
 {
     DesktopHdrController::get()->sessionStarted(IntelPreferences::get()->desktopHdrMode(),
-                                                isFullscreen(window), displayName(window));
+                                                isFullscreen(window), isFocused(window),
+                                                displayName(window));
 }
 
 void notifyHostHdr(bool enabled)
@@ -64,7 +70,8 @@ void notifyHostHdr(bool enabled)
 
 void notifyWindowState(SDL_Window* window)
 {
-    DesktopHdrController::get()->notifyWindowState(isFullscreen(window), displayName(window));
+    DesktopHdrController::get()->notifyWindowState(isFullscreen(window), isFocused(window),
+                                                   displayName(window));
 }
 
 void sessionEnded()

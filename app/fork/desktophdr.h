@@ -31,9 +31,11 @@ public:
     void stop();
 
     // Session hooks. The display name is SDL's name for the display hosting the window.
-    void sessionStarted(IntelPreferences::DesktopHdrMode mode, bool fullscreen, const QString& displayName);
+    // "Focused" is keyboard focus, which GNOME takes away for the overview, another workspace
+    // or another window.
+    void sessionStarted(IntelPreferences::DesktopHdrMode mode, bool fullscreen, bool focused, const QString& displayName);
     void notifyHostHdr(bool enabled);
-    void notifyWindowState(bool fullscreen, const QString& displayName);
+    void notifyWindowState(bool fullscreen, bool focused, const QString& displayName);
 
     // Restores the display and waits up to 3 s for it, since the process may exit right after
     void sessionEnded();
@@ -59,7 +61,7 @@ private:
 
     // Worker-thread side
     void initializeWorker();
-    void startSession(IntelPreferences::DesktopHdrMode mode, bool fullscreen, const QString& displayName);
+    void startSession(IntelPreferences::DesktopHdrMode mode, bool fullscreen, bool focused, const QString& displayName);
     void endSession();
     void evaluate();
     void onTransitionTimer();
@@ -67,6 +69,7 @@ private:
     void leave();
     void checkRendererFallback();
     bool resolveTarget(const QList<DesktopHdrMonitor>& monitors, DesktopHdrMonitor* target);
+    bool streamInFront() const;
     bool wantHdr() const;
     QString waitingStatus() const;
     void setStatus(const QString& status);
@@ -89,6 +92,7 @@ private:
     IntelPreferences::DesktopHdrMode m_Mode = IntelPreferences::DHM_OFF;
     bool m_HostHdr = false;
     bool m_Fullscreen = false;
+    bool m_Focused = false;
     QString m_DisplayName;
     DesktopHdrMonitor m_Target;
     quint32 m_PreviousMode = 0;
