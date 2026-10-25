@@ -61,14 +61,29 @@ From `build/`, without `make install` (so a packaged Moonlight is not clobbered)
 
 Settings and pairing are shared with any stock Moonlight install.
 
-Fork-specific environment variables:
+Fork options are in Settings → `moonlight-intel` (stored under `[moonlight-intel]` in the shared
+`Moonlight.conf`). The one environment variable is an override:
 
 | Variable | Effect |
 |---|---|
-| `MOONLIGHT_INTEL_GPU_TIMING=1` | logs libplacebo GPU time per frame every 5 s, plus a one-time pass breakdown |
+| `MOONLIGHT_INTEL_GPU_TIMING=1` | forces "Log GPU render timing" on: video GPU time (`gpu-time(video)`) every 5 s, plus a one-time pass breakdown |
 
 The `moonlight-intel: frame …` lines (swapchain and source size and colour space, logged on the
 first frame and whenever they change) are always on.
+
+## Desktop HDR
+
+With "Switch desktop to HDR during HDR streams" on, Moonlight switches the panel to HDR
+(BT.2100) when the host sends HDR, and back to the previous colour mode (e.g. SDR Native)
+afterwards. It uses Mutter's temporary display configuration: nothing is written to
+`~/.config/monitors.xml`, and there is no confirmation dialog. A marker in
+`$XDG_RUNTIME_DIR/moonlight-intel/desktop-hdr.json` lets the next launch restore the panel after
+a crash. Each switch logs a `moonlight-intel: desktop-hdr …` line.
+
+```bash
+# Inspect the current colour mode (read-only)
+gdctl show --properties | grep -iE '^Monitor|color-mode'
+```
 
 ## Diagnostics
 
@@ -81,15 +96,17 @@ vulkaninfo --summary 2>/dev/null | grep -E 'driverName|driverInfo|apiVersion' | 
 # Logged run (from build/)
 MOONLIGHT_INTEL_GPU_TIMING=1 ./app/moonlight 2>&1 | tee /tmp/ml.log
 
-# GPU engine load during a stream (needs root)
-sudo intel_gpu_top -s 1000 -o - | head -35
+# Per-client GPU engine load during a stream: rcs = render/3D, vcs = video decode.
+# gputop (intel-gpu-tools) reads DRM fdinfo, so your own processes need no root.
+gputop -d 1 -n 5 | grep -aE 'Frequency|PID|moonlight|gnome-shell'
 
 # Pull the relevant lines out of a log without IPs or hostnames
 grep -E 'moonlight-intel:|renderer|Renderer|HDR|present mode|libplacebo: (Using|Vulkan)|swapchain' /tmp/ml.log
 ```
 
 Useful while streaming: the stats overlay (Ctrl+Alt+Shift+S) shows decode and render time,
-frame drops and network latency. More libplacebo detail: `PLVK_LOG_LEVEL=4` (info), which also
+frame drops and network latency, plus the fork's lines when libplacebo renders: video GPU time,
+the scaling step, the output colour space and the desktop-HDR state. More libplacebo detail: `PLVK_LOG_LEVEL=4` (info), which also
 logs the surface format and colour space libplacebo picks ("Picked surface configuration").
 
 Logs can contain the host's IP and name. Only share them through the `grep` above, and redact

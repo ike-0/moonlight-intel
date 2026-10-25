@@ -96,7 +96,7 @@ qmake6 ../moonlight-qt.pro && make -j"$(nproc)" release   # binary: build/app/mo
 - Run from the build dir, don't `make install` (avoids clobbering a packaged Moonlight).
 - The fork shares `~/.config/Moonlight Game Streaming Project/` with any stock Moonlight
   install — pairing and settings are common to both.
-- Useful: `SDL_VIDEODRIVER=wayland`, `LIBVA_DRIVER_NAME=iHD`, `vainfo`, `intel_gpu_top`,
+- Useful: `SDL_VIDEODRIVER=wayland`, `LIBVA_DRIVER_NAME=iHD`, `vainfo`, `gputop`,
   Moonlight's in-stream stats overlay (Ctrl+Alt+Shift+S).
 - PR test steps state the exact command, stream settings (resolution, fps, codec, HDR on/off)
   and what to look for in the overlay/log.

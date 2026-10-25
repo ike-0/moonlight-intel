@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Ready |
+| Status | In review |
 | Created | 2026-10-25 |
 | Branch | `claude/0002-settings-overlay-autohdr` |
 | PR | — |
@@ -410,9 +410,9 @@ worker:
 
 ## Acceptance criteria
 
-- [ ] Arch build with libplacebo: clean, no new warnings in touched files. (Cloud:
+- [x] Arch build with libplacebo: clean, no new warnings in touched files. (Cloud:
       `disable-libplacebo` build compiles.)
-- [ ] Non-Linux code paths compile by inspection: no QtDBus outside `linux`, backend factory
+- [x] Non-Linux code paths compile by inspection: no QtDBus outside `linux`, backend factory
       returns `nullptr`.
 - [ ] Settings page shows the `moonlight-intel` group at the end of the right column. Values
       persist across restarts under `[moonlight-intel]`; existing settings unchanged.
@@ -429,7 +429,7 @@ worker:
 - [ ] SDR stream with the SDR-Vulkan setting on → log `Renderer 'Vulkan (libplacebo)' with 'VAAPI'
       backend chosen`, and the overlay lines appear. Setting off → `Renderer 'EGL/GLES' …`, as
       upstream.
-- [ ] `docs/FORK.md` and `docs/arch.md` updated; `git grep intel_gpu_top -- CLAUDE.md docs/arch.md`
+- [x] `docs/FORK.md` and `docs/arch.md` updated; `git grep intel_gpu_top -- CLAUDE.md docs/arch.md`
       returns nothing.
 
 ## Hardware test (user runs on the laptop)
@@ -510,4 +510,87 @@ in A, check that the renderer fallback line `desktop-hdr recreating renderer` ap
 
 ## Execution notes
 
-Filled in by the executing session: deviations from the plan, findings, follow-ups.
+Executed locally on the laptop (2026-10-25). The remaining criteria need the hardware test.
+
+**Step 1:** PR 1 and PR 2 were merged; `origin/intel` merged into this branch without conflicts.
+
+**Re-checked facts (step 2, step 6):**
+- All line references in Verified facts hold within a few lines.
+- `gdctl show --properties` plus a raw `GetCurrentState` on GNOME/Mutter 51.1 match the plan exactly:
+  - method signatures as listed;
+  - `color-mode` u (0 default, 1 bt2100, 2 sdr-native), currently 1;
+  - `supported-color-modes` `[0, 2, 1]`, `rgb-range` present, `is-underscanning` absent on
+    `eDP-1`;
+  - `layout-mode` 1 with `supports-changing-layout-mode` true;
+  - `ApplyMonitorsConfigAllowed` true.
+- SDL (sdl2-compat 2.32.74 on SDL 3.4.18, Wayland) names the panel `Built-in display`, which
+  matches Mutter's `display-name`. The connector is `eDP-1`.
+- One write-shaped call, beyond the read-only check: a scratch harness ran the real backend code
+  with `ApplyMonitorsConfig` **method 0 (verify)** and the panel's *current* colour mode. Mutter
+  accepted the marshalled configuration. Verify never applies, and even an apply would have
+  changed nothing. `gdctl` showed the panel unchanged afterwards.
+
+**Plan vs code: end-of-stream stats log.** The fork lines do **not** reach the
+`Global video stats` log.
+- Upstream writes that log in `FFmpegVideoDecoder::reset()` *after* deleting the renderers, so
+  the render snapshot is already cleared, as this plan requires.
+- Its buffer is `char[512]`, and upstream's own text already takes about 500 bytes.
+- `appendOverlayStats()` appends whole lines only, so the log is never cut mid-line.
+- The 5 s `gpu-time(video)` log covers the logging need. Getting the lines into that log would
+  need two more `ffmpeg.cpp` changes (a bigger buffer, and a snapshot that outlives the
+  renderer). That is a planning call.
+
+**Buffer check:** the worst-case overlay text is 853 bytes (upstream 572, counting
+`DISPLAY_BITRATE`, plus fork 280), under 1024. `overlaymanager.h` is unchanged.
+
+**Deviations, all small:**
+- **When the target is chosen.** The target monitor and the "already HDR → passive" decision are
+  made at the first enter attempt, not at session start.
+  - On Wayland, SDL only knows the window's output after the surface enters it, so at window
+    creation it reports display 0.
+  - SDR streams and Off now make no D-Bus calls at all.
+  - Passive still lasts for the whole session. Every window event refreshes the display name.
+- **Early host notifications.** Host-HDR notifications that arrive before `sessionStarted` are
+  ignored, and each session starts with host HDR off. The decoder-creation hook reports the real
+  state right after the window is shown, so a stale callback from the previous session can't
+  switch the panel.
+- **Hook signature.** `notifyWindowState(SDL_Window*)` replaces `(bool isFullscreen)`. The fork
+  reads the fullscreen flag and display name itself, and the hook stays one line.
+- **Overlay states.** The states are ASCII: `switching...`. I added `waiting for fullscreen` for
+  fullscreen-only mode with host HDR on while windowed. When no fresh plvk stats exist (EGL),
+  line 3 reads `Desktop HDR: <state>`.
+- **Failed restores.** A restore that fails on D-Bus keeps the marker, so the next launch retries.
+  "User changed it" and "monitor gone" delete it, as planned. Recovery always deletes the
+  marker, so it runs once.
+- **Clearing the snapshot.** The snapshot is cleared by an RAII member
+  (`Fork::RenderStatsPublisher`), not by a line in `~PlVkRenderer`, so plvk gets no new hook
+  site. It clears only if it was the last publisher, so a probe renderer being destroyed can't
+  blank a live one.
+- **Overlay pass detection.** An overlay pass is one whose shader *steps* are all `"overlay"`.
+  This equals "description is exactly `overlay`" in the normal case, and also handles
+  libplacebo's tallied form (`overlay ×2`).
+- **Scaling bucket.** It matches `"scaling ("` steps only. libplacebo gives no generic marker for
+  user-hook passes, so plan 0003 should match its own hooks' `//!DESC` in `isScalingPass()`.
+- **Build scope.** The GNOME backend builds under `linux:qtHaveModule(dbus)` with a
+  `HAVE_GNOME_DISPLAY_CONFIG` define, instead of `linux { }` and an in-file `Q_OS_LINUX` guard.
+  Arch builds the same. A Linux Qt without QtDBus (e.g. the Steam Link SDK) still builds, with
+  the option disabled.
+- **Restore timing.** `sessionEnded()` sits right after `DispatchDeferredCleanup:`, so the
+  restore blank happens while the stream window is still up and before the mouse is released.
+
+**Found, not changed:** with "Vulkan for SDR" on, `getDecoderInfo()`'s HEVC 8-bit probe would
+also try plvk. On the target the HEVC Main10 probe succeeds first and returns, so that probe
+never runs. Upstream's `PREFER_VULKAN=1` behaves the same way.
+
+**Verified without the hardware test:**
+- Full Arch build and a scratch `CONFIG+=disable-libplacebo` build. The only warnings are the six
+  existing upstream `lock_queue`/`unlock_queue` deprecations in `plvk.cpp`.
+- Scratch harnesses:
+  - controller state machine with a fake backend, 17 checks: recovery, immediate enter, 3 s
+    host-SDR hold against a 1 s flap, 2 s fullscreen debounce both ways, passive, Off, user
+    change respected, one renderer recreate;
+  - overlay formatter, including whole-line truncation;
+  - the settings group rendered offscreen in the Material dark style, available and
+    unavailable.
+- Smoke run of the real binary with a scratch config: logs `moonlight-intel: desktop-hdr
+  available`, reads `[moonlight-intel]`, and exits cleanly through `aboutToQuit`.
