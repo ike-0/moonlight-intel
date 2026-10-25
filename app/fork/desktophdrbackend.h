@@ -48,4 +48,8 @@ public:
     // be temporary: not persisted and without a confirmation prompt. On success *detail holds
     // backend specifics for the log (GNOME: the configuration serial), on failure the error.
     virtual bool setColorMode(const DesktopHdrMonitor& target, quint32 mode, QString* detail) = 0;
+
+    // Whether the desktop's own overview is open. Switches wait until it closes, since a
+    // modeset can close it and hand focus back to the stream.
+    virtual bool overviewActive() { return false; }
 };

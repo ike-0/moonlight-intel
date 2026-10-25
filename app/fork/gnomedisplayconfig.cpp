@@ -18,6 +18,13 @@
 // ApplyMonitorsConfig replies only after the modeset
 #define DBUS_TIMEOUT_MS 10000
 
+#define SHELL_SERVICE "org.gnome.Shell"
+#define SHELL_PATH "/org/gnome/Shell"
+#define SHELL_INTERFACE "org.gnome.Shell"
+
+// OverviewActive is polled while a switch waits, so it must answer quickly
+#define SHELL_TIMEOUT_MS 1000
+
 #define UNAVAILABLE_REASON "Requires GNOME 48+ with an HDR-capable display"
 
 namespace GnomeDbus
@@ -391,4 +398,16 @@ bool GnomeDisplayConfig::setColorMode(const DesktopHdrMonitor& target, quint32 m
         *detail = QString("%1 (serial %2)").arg(describeError(reply)).arg(state.serial);
         return false;
     }
+}
+
+bool GnomeDisplayConfig::overviewActive()
+{
+    QDBusMessage call = QDBusMessage::createMethodCall(SHELL_SERVICE, SHELL_PATH,
+                                                       "org.freedesktop.DBus.Properties", "Get");
+    call << SHELL_INTERFACE << "OverviewActive";
+    QDBusMessage reply = QDBusConnection::sessionBus().call(call, QDBus::Block, SHELL_TIMEOUT_MS);
+
+    // Without an answer, don't hold switches back
+    return reply.type() == QDBusMessage::ReplyMessage &&
+           qvariant_cast<QDBusVariant>(reply.arguments().value(0)).variant().toBool();
 }

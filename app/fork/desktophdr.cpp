@@ -31,6 +31,11 @@
 #define LEAVE_DELAY_HOST_SDR_MS 3000
 #define LEAVE_DELAY_NOT_IN_FRONT_MS 2000
 
+// While the overview is open, a due switch is re-checked at this interval. After it closes,
+// the switch waits a little longer, so a refocus of the stream can cancel it first.
+#define OVERVIEW_POLL_MS 500
+#define OVERVIEW_CLOSED_GRACE_MS 1000
+
 // How long after a switch the swapchain must be HDR before the renderer is recreated
 #define FALLBACK_CHECK_DELAY_MS 2000
 
@@ -243,6 +248,7 @@ void DesktopHdrController::startSession(IntelPreferences::DesktopHdrMode mode, b
 void DesktopHdrController::endSession()
 {
     m_TransitionTimer->stop();
+    m_HeldByOverview = false;
     m_FallbackTimer->stop();
 
     if (m_Phase == Phase::On) {
@@ -290,6 +296,7 @@ void DesktopHdrController::evaluate()
     bool wanted = wantHdr();
     if (wanted == (m_Phase == Phase::On)) {
         m_TransitionTimer->stop();
+        m_HeldByOverview = false;
         if (m_Phase == Phase::Armed) {
             setStatus(waitingStatus());
         }
@@ -312,10 +319,32 @@ void DesktopHdrController::evaluate()
 void DesktopHdrController::onTransitionTimer()
 {
     bool wanted = wantHdr();
-    if (wanted && m_Phase == Phase::Armed) {
+    if (!(wanted && m_Phase == Phase::Armed) && !(!wanted && m_Phase == Phase::On)) {
+        return;
+    }
+
+    // A modeset while GNOME's overview is open closes it and refocuses the stream, so wait for
+    // the overview to close. Focus changes meanwhile still re-evaluate and can cancel the switch.
+    if (m_Backend->overviewActive()) {
+        if (!m_HeldByOverview) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "moonlight-intel: desktop-hdr %s waits for the overview to close",
+                        wanted ? "enter" : "leave");
+            m_HeldByOverview = true;
+        }
+        m_TransitionTimer->start(OVERVIEW_POLL_MS);
+        return;
+    }
+    if (m_HeldByOverview) {
+        m_HeldByOverview = false;
+        m_TransitionTimer->start(OVERVIEW_CLOSED_GRACE_MS);
+        return;
+    }
+
+    if (wanted) {
         enter();
     }
-    else if (!wanted && m_Phase == Phase::On) {
+    else {
         leave();
     }
 }

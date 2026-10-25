@@ -98,4 +98,5 @@ private:
     quint32 m_PreviousMode = 0;
     bool m_Restored = false;
     bool m_FallbackUsed = false;
+    bool m_HeldByOverview = false; // a due switch waited for the overview to close
 };

@@ -478,6 +478,10 @@ streams", GPU timing log **on**.
     after ~2 s. Back to the stream: HDR after ~2 s.
   - A peek shorter than 2 s doesn't switch. While the stream is out of front, the overlay
     shows `waiting for focus` or `restored`.
+  - Stay in the overview for more than 2 s: the panel stays in HDR while the overview is open
+    (log: `desktop-hdr leave waits for the overview to close`).
+    - Pick another window: SDR Native about 1–1.5 s after the overview closes.
+    - Or go back to the stream: no switch at all.
 - **F. Off (doubles as 0001's Run C):** set Off, GNOME in SDR Native, and stream HDR.
   - The panel must not change, and the log has no `desktop-hdr` writes.
   - Note whether the second `frame` line reaches `BT.2020/PQ hdr=on`. If yes, Mesa offers PQ
@@ -655,6 +659,25 @@ Executed locally on the laptop (2026-10-25). The remaining criteria need the har
   - restore at session end;
   - "During HDR streams" ignores focus.
 - Criterion and test E are extended accordingly and need a re-run.
+
+**Second change after test E (user request):**
+- **Problem:** a switch that fell due while the GNOME overview was open made GNOME close the
+  overview and refocus the stream, which then switched back.
+- **Fix:** a due switch now waits while GNOME Shell's `OverviewActive` property is true.
+  - It is read from the `org.gnome.Shell` D-Bus interface, which any client can read; checked
+    on GNOME Shell 51.1.
+  - The controller polls it every 0.5 s while a switch is held.
+  - After the overview closes, it waits 1 s more, so a refocus of the stream can cancel the
+    switch first.
+  - Session end isn't held.
+- **Interface:** `DesktopHdrBackend::overviewActive()` defaults to false; the GNOME backend
+  implements it.
+- **Tests:** the controller harness adds 7 checks (32 in total):
+  - held for 4 s with the overview open;
+  - grace period after it closes;
+  - SDR after closing to another window;
+  - no switch when the overview closes back to the stream;
+  - session end still restores.
 
 **Found, not changed:** with "Vulkan for SDR" on, `getDecoderInfo()`'s HEVC 8-bit probe would
 also try plvk. On the target the HEVC Main10 probe succeeds first and returns, so that probe

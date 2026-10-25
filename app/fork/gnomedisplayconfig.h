@@ -3,7 +3,8 @@
 #include "desktophdrbackend.h"
 
 // moonlight-intel: desktop-HDR backend for GNOME, over Mutter's org.gnome.Mutter.DisplayConfig
-// D-Bus interface (colour modes need GNOME 48+). Only built on Linux with QtDBus.
+// D-Bus interface (colour modes need GNOME 48+) and GNOME Shell's OverviewActive property.
+// Only built on Linux with QtDBus.
 class GnomeDisplayConfig : public DesktopHdrBackend
 {
 public:
@@ -13,4 +14,5 @@ public:
     quint32 hdrColorMode() const override;
     bool currentState(QList<DesktopHdrMonitor>* monitors, QString* error) override;
     bool setColorMode(const DesktopHdrMonitor& target, quint32 mode, QString* detail) override;
+    bool overviewActive() override;
 };
