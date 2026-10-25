@@ -16,6 +16,11 @@ renderer enabled, and we have measured numbers for the existing HDR path at a 10
 
 ## Context
 
+**Motivation:** bitrate is the limit. Streaming native 2880×1800 at 120 Hz HDR, even at
+200 Mbps, still shows heavy compression on foliage and smoke. At the same bitrate a
+1728×1080 stream gets 2.78× more bits per pixel (1920×1200: 2.25×). The client then has to
+upscale cheaply enough to hold 120 Hz with HDR.
+
 Findings from planning (verified against the code at `ac296864` and public sources, Oct 2026):
 
 **Current Linux HDR path (no fork changes needed to use it):**
@@ -108,17 +113,28 @@ stay cheap; record it in `docs/FORK.md`.
    - Build commands (out-of-tree `build/`, full libplacebo), run command, and the diagnostic
      commands from the Hardware test section.
 4. Implement GPU timing and the first-frame log in `plvk.cpp`/`plvk.h`.
-5. Cloud build check with `"CONFIG+=disable-libplacebo"`. `plvk.cpp` isn't compiled in that
-   configuration, so also attempt the optional libplacebo-from-source step. If that's not
-   possible, say clearly in the PR that `plvk.cpp` is compile-checked only on Arch.
-6. Update `docs/FORK.md` (delta row) and this plan (status, criteria, execution notes).
-7. Open the PR into `intel`, with the Hardware test section below copied in verbatim.
+5. Build check — depends on where this runs:
+   - **Local session on the laptop (preferred for this plan):** build with full libplacebo
+     (no `disable-libplacebo`); qmake must print "Vulkan support enabled via libplacebo". The
+     cloud-only items (disable-libplacebo build, libplacebo from source) are N/A.
+   - **Cloud session:** build with `"CONFIG+=disable-libplacebo"`. Also attempt the optional
+     libplacebo-from-source step; if that fails, say in the PR that `plvk.cpp` is only
+     compile-checked on Arch.
+6. **Local session only:** run Hardware test steps 0 (versions) and 2 (build) yourself and put
+   the outputs in `Execution notes`.
+   - Steps 1, 3 and 4 belong to the user: GNOME settings, driving the stream, and `sudo`.
+   - Never run `sudo`, never read the Moonlight config directory, and only read the stream log
+     through the `grep` in "Collect".
+7. Update `docs/FORK.md` (delta row) and this plan (status, criteria, execution notes).
+8. Open the PR into `intel` with `gh pr create --repo ike-0/moonlight-intel --base intel`,
+   copying the Hardware test section below in verbatim.
 
 ## Acceptance criteria
 
-- [ ] Cloud build passes with `CONFIG+=disable-libplacebo`, no new warnings in touched files
-- [ ] `plvk.cpp` compiles somewhere before the PR: cloud with source-built libplacebo, or
-      flagged for the user's Arch build
+- [ ] Builds with no new warnings in touched files: on Arch with libplacebo (local session), or
+      in the cloud with `CONFIG+=disable-libplacebo`
+- [ ] `plvk.cpp` compiles before the PR: Arch build (local), or cloud with source-built
+      libplacebo, or flagged for the user's Arch build
 - [ ] With `MOONLIGHT_INTEL_GPU_TIMING` unset, behaviour and default log output are unchanged
 - [ ] With it set, a `moonlight-intel: gpu-time …` line appears every ~5 s during streaming
 - [ ] First-frame line logs swapchain size + colour space and source size + colour space
