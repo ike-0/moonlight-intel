@@ -93,7 +93,7 @@ this repo at `intel` + PR 1. Line numbers are approximate; re-check them.
   moonlight-common-c's connection thread. It is re-applied after decoder creation
   (~L2253, `LiGetCurrentHostDisplayHdrMode()`). `clSetHdrMode` drops the call if the decoder
   lock is busy.
-- **Measured on the laptop after PR 1 (2026-10-25)**, HDR stream 1920×1200@120, HEVC:
+- **Measured on the laptop after PR 1 (2026-10-25)**, HDR stream 1920×1200@120, **AV1** (Main10):
   - HDR10 PQ reaches Vulkan on GNOME: the swapchain went `BT.709/sRGB hdr=off` →
     `BT.2020/PQ hdr=on` on frame 2. The swapchain is native 2880×1800 at 166% scale.
   - libplacebo time: 0.48 ms avg / 0.52 ms p99, in one fused pass,
@@ -149,6 +149,14 @@ this repo at `intel` + PR 1. Line numbers are approximate; re-check them.
   - the 5 s log and pass list are gated by the setting or env var.
 - GNOME auto-HDR, with crash recovery and a one-shot renderer-recreate fallback.
 - `docs/FORK.md` deltas, `docs/arch.md` note.
+- Docs fix: replace `intel_gpu_top` with **`gputop`**.
+  - The target runs the `xe` kernel driver, where `intel_gpu_top` is deprecated (confirmed by
+    the user). `gputop` (igt, `intel-gpu-tools` package) reads per-client DRM fdinfo.
+  - Places: `CLAUDE.md` "Useful:" line, `docs/arch.md` diagnostics (~L85), and the 0001
+    Baseline-results row label (`intel_gpu_top: Render/3D %, Video %` →
+    `gputop: render %, video %`).
+  - Check `gputop -h` for the actual options and don't invent flags. Note whether `sudo` is
+    needed; fdinfo of your own processes is normally readable without it.
 
 **Out:**
 - The upscaler, deband, scaler hotkey (plan 0003).
@@ -388,7 +396,8 @@ worker:
    - new rows D2 (settings + fork module), D3 (overlay lines + plvk timing changes), D4
      (desktop HDR), D5 (Vulkan renderer for SDR streams);
    - the merge notes for each upstream hook line.
-   Add a short "Desktop HDR" note to `docs/arch.md` (`gdctl show --properties` to inspect).
+   Add a short "Desktop HDR" note to `docs/arch.md` (`gdctl show --properties` to inspect),
+   and do the `intel_gpu_top` → `gputop` docs fix.
 9. Plan status, criteria, Execution notes; PR into `intel` with
    `gh pr create --repo ike-0/moonlight-intel --base intel`, Hardware test copied verbatim.
 
@@ -413,7 +422,8 @@ worker:
 - [ ] SDR stream with the SDR-Vulkan setting on → log `Renderer 'Vulkan (libplacebo)' with 'VAAPI'
       backend chosen`, and the overlay lines appear. Setting off → `Renderer 'EGL/GLES' …`, as
       upstream.
-- [ ] `docs/FORK.md` and `docs/arch.md` updated.
+- [ ] `docs/FORK.md` and `docs/arch.md` updated; `git grep intel_gpu_top -- CLAUDE.md docs/arch.md`
+      returns nothing.
 
 ## Hardware test (user runs on the laptop)
 
