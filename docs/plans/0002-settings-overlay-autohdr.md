@@ -19,6 +19,9 @@
 3. On GNOME with the panel in **SDR Native**, an HDR stream switches the panel to HDR (BT.2100)
    for the stream and restores SDR Native afterwards, also after a crash. No confirmation
    dialog, nothing written to `monitors.xml`.
+4. SDR (8-bit) streams also render through `PlVkRenderer` (libplacebo) instead of `EGLRenderer`.
+   This is controlled by a setting (default on), so the overlay readouts, and plan 0003's
+   upscaler, cover every stream, not just HDR ones.
 
 ## Context
 
@@ -74,6 +77,14 @@ this repo at `intel` + PR 1. Line numbers are approximate; re-check them.
   `gdctl set … --color-mode bt2100` (temporary unless `--persistent`).
 
 **Moonlight:**
+- **SDR streams don't use plvk today.** `FFmpegVideoDecoder::createFrontendRenderer()`
+  (`ffmpeg.cpp` ~L338–420) tries `PlVkRenderer` only for 10-bit formats. For 8-bit it goes
+  straight to `EGLRenderer` unless `PREFER_VULKAN=1` (the `else` branch, ~L405).
+  - Confirmed on the laptop after PR 1 merged. An SDR stream logs
+    `Renderer 'EGL/GLES' with 'VAAPI' backend chosen` and `EGLImage pixel format: 178`, and no
+    `moonlight-intel: frame` lines. 178 is `AV_PIX_FMT_DRM_PRIME` in FFmpeg 9.0.2's headers,
+    i.e. VA-API composed export.
+  - plvk's name in that log line is `Vulkan (libplacebo)`.
 - **HDR negotiation doesn't depend on the desktop mode.** `PlVkRenderer::getRendererAttributes()`
   always returns `RENDERER_ATTRIBUTE_HDR_SUPPORT`, because it tone-maps to SDR swapchains. The
   `VK_COLOR_SPACE_HDR10_ST2084_EXT` check (`plvk.cpp` ~L355, ~L500) only ranks GPUs. So switching
@@ -118,7 +129,9 @@ this repo at `intel` + PR 1. Line numbers are approximate; re-check them.
 - A `moonlight-intel` settings group with:
   - "Switch desktop to HDR during HDR streams": Off / During HDR streams (default) /
     During HDR streams, fullscreen only;
-  - "Log GPU render timing" (default off; `MOONLIGHT_INTEL_GPU_TIMING=1` still forces it on).
+  - "Log GPU render timing" (default off; `MOONLIGHT_INTEL_GPU_TIMING=1` still forces it on);
+  - "Use Vulkan (libplacebo) renderer for SDR streams" (default **on**): one marked condition
+    in `createFrontendRenderer()`'s 8-bit branch. The HDR path is unchanged.
 - Three overlay lines (GPU, Scaling, Output + desktop HDR), also written to the end-of-stream
   stats log.
 - plvk changes:
@@ -149,7 +162,7 @@ only:
 | `app/main.cpp` | `#include "fork/fork.h"` + one call `Fork::initialize()` before the QML engine loads (next to the other `qmlRegister*` calls) |
 | `app/qml.qrc` | one `<file>gui/IntelSettingsGroup.qml</file>` |
 | `app/gui/SettingsView.qml` | one line in `settingsColumn2` after `advancedSettingsGroupBox` |
-| `app/streaming/video/ffmpeg.cpp` | one call at the end of `stringifyVideoStats()` |
+| `app/streaming/video/ffmpeg.cpp` | one call at the end of `stringifyVideoStats()`; one marked condition in `createFrontendRenderer()`'s 8-bit branch |
 | `app/streaming/session.cpp` | ≤ 5 one-line hooks (see below) |
 | `plvk.cpp` / `plvk.h` | extend the existing 0001 fork block; no new hook sites in upstream code beyond 0001's |
 
@@ -161,7 +174,7 @@ Don't touch `renderer.h`, `overlaymanager.*` (unless the buffer check in Steps f
 | File | Role |
 |---|---|
 | `fork.h/.cpp` | `Fork::initialize()`: registers QML singleton `IntelPreferences` (module `IntelPreferences 1.0`), starts the desktop-HDR controller (which runs crash recovery) |
-| `intelpreferences.h/.cpp` | `QObject` singleton; `QSettings` group `moonlight-intel/`; write-through on change. Properties: `desktopHdrMode` (enum `DHM_OFF`, `DHM_HDR_STREAMS`, `DHM_HDR_STREAMS_FULLSCREEN`; default `DHM_HDR_STREAMS`), `logGpuTiming` (bool, default false), read-only `desktopHdrAvailable` (bool) + `desktopHdrUnavailableReason` (QString) fed by the controller |
+| `intelpreferences.h/.cpp` | `QObject` singleton; `QSettings` group `moonlight-intel/`; write-through on change. Properties: `desktopHdrMode` (enum `DHM_OFF`, `DHM_HDR_STREAMS`, `DHM_HDR_STREAMS_FULLSCREEN`; default `DHM_HDR_STREAMS`), `logGpuTiming` (bool, default false), `vulkanForSdr` (bool, default true), read-only `desktopHdrAvailable` (bool) + `desktopHdrUnavailableReason` (QString) fed by the controller |
 | `renderstats.h/.cpp` | Thread-safe snapshot (mutex) written by plvk's render thread, read by the decoder thread (overlay) and the HDR controller. `Fork::appendOverlayStats(char* out, int len)` formats the overlay lines |
 | `desktophdr.h/.cpp` | Platform-independent controller: policy, debounce, marker file, worker `QThread`. Public API is thread-safe and non-blocking except `sessionEnded()` |
 | `desktophdrbackend.h` | Abstract backend: `probe()`, `currentState()`, `setColorMode(target, mode)`. The factory returns the GNOME backend on Linux when available, else `nullptr`. Future KDE/Windows backends implement this |
@@ -188,6 +201,23 @@ it at runtime.
     ends. Each switch blanks the screen briefly."
 - **GPU timing checkbox:** "Log GPU render timing", bound to `logGpuTiming`. Tooltip: "Writes
   libplacebo GPU timing to the log every 5 seconds. The stats overlay always shows it."
+- **SDR renderer checkbox:** "Use Vulkan (libplacebo) renderer for SDR streams", bound to
+  `vulkanForSdr`.
+  - Tooltip: "Renders SDR streams through libplacebo, like HDR streams, so the moonlight-intel
+    overlay readouts and upscaler apply. Off = upstream behaviour (EGL). Takes effect at the
+    next stream."
+
+### Vulkan renderer for SDR streams
+
+- In the 8-bit `else` branch of `createFrontendRenderer()`, change only the condition, to
+  `qgetenv("PREFER_VULKAN") == "1" || Fork::preferVulkanForSdr()`. One marked line; the rest of
+  the upstream logic is untouched.
+  - If `PlVkRenderer` fails to initialise, the existing fall-through to `EGLRenderer` still
+    applies.
+  - Like upstream's `PREFER_VULKAN`, it doesn't consult `vulkanIsSlow`.
+- `Fork::preferVulkanForSdr()` returns a cached `std::atomic<bool>` that `IntelPreferences`
+  updates on load and change. No `QSettings` access on the decoder path.
+- The startup decoder probe (`Session::getDecoderInfo`) and the 10-bit path are unaffected.
 
 ### Render stats and overlay lines
 
@@ -328,7 +358,7 @@ worker:
    Build.
 4. Extend plvk (always-on callback, overlay-pass exclusion, scaling bucket, 1 s publish, setting
    or env gating for the log). Add the `stringifyVideoStats()` hook and `appendOverlayStats()`.
-   Do the buffer check. Build.
+   Do the buffer check. Add the SDR condition in `createFrontendRenderer()`. Build.
 5. Add `desktophdrbackend.h`, `gnomedisplayconfig`, `desktophdr`; `QT += dbus` under `linux`;
    the session hooks. Build.
 6. **Local session only, read-only D-Bus check:** run `gdctl show --properties` and confirm the
@@ -340,7 +370,7 @@ worker:
    compiles. `app/fork/` must not depend on libplacebo; only plvk publishes stats.
 8. Update `docs/FORK.md`:
    - new rows D2 (settings + fork module), D3 (overlay lines + plvk timing changes), D4
-     (desktop HDR);
+     (desktop HDR), D5 (Vulkan renderer for SDR streams);
    - the merge notes for each upstream hook line.
    Add a short "Desktop HDR" note to `docs/arch.md` (`gdctl show --properties` to inspect).
 9. Plan status, criteria, Execution notes; PR into `intel` with
@@ -364,6 +394,9 @@ worker:
 - [ ] Fullscreen-only mode: windowed → SDR Native; fullscreen → HDR after ~2 s; back to windowed
       → SDR Native after ~2 s.
 - [ ] Setting Off → no D-Bus writes (log shows none).
+- [ ] SDR stream with the SDR-Vulkan setting on → log `Renderer 'Vulkan (libplacebo)' with 'VAAPI'
+      backend chosen`, and the overlay lines appear. Setting off → `Renderer 'EGL/GLES' …`, as
+      upstream.
 - [ ] `docs/FORK.md` and `docs/arch.md` updated.
 
 ## Hardware test (user runs on the laptop)
@@ -406,13 +439,20 @@ streams", GPU timing log **on**.
 - **E. Fullscreen-only:** set "During HDR streams, fullscreen only". Start the stream,
   Ctrl+Alt+Shift+X to windowed (SDR Native after ~2 s), and back (HDR after ~2 s).
 - **F. Off:** set Off. A stream must not change the panel, and the log has no `desktop-hdr` writes.
+- **G. SDR renderer:** in Moonlight's Basic Settings untick *Enable HDR* and stream.
+  - The log shows `Renderer 'Vulkan (libplacebo)' with 'VAAPI' backend chosen`.
+  - The overlay shows the GPU/Scaling/Output lines.
+  - The panel stays in SDR Native.
+  - Then untick "Use Vulkan (libplacebo) renderer for SDR streams": the next stream logs
+    `Renderer 'EGL/GLES' …`.
+  - Re-tick both afterwards.
 
 **Collect (no IPs or hostnames):**
 ```bash
-grep -E 'moonlight-intel:' /tmp/ml-0002.log
+grep -E "moonlight-intel:|Renderer '" /tmp/ml-0002.log
 ```
 
-**Expected:** all of A–F as described. If the overlay shows `Output: … SDR …` after the switch
+**Expected:** all of A–G as described. If the overlay shows `Output: … SDR …` after the switch
 in A, check that the renderer fallback line `desktop-hdr recreating renderer` appeared, then
 `Output: … PQ`.
 
