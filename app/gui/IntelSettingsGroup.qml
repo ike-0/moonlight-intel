@@ -52,7 +52,7 @@ GroupBox {
                     val: IntelPreferences.DHM_HDR_STREAMS
                 }
                 ListElement {
-                    text: qsTr("During HDR streams, only while fullscreen and in front")
+                    text: qsTr("During HDR streams (fullscreen focused)")
                     val: IntelPreferences.DHM_HDR_STREAMS_FULLSCREEN
                 }
             }
@@ -67,7 +67,7 @@ GroupBox {
             ToolTip.timeout: 5000
             ToolTip.visible: hovered
             ToolTip.text: qsTr("GNOME only. The display switches to HDR when the host starts sending HDR, and back to its previous mode (e.g. SDR Native) when the stream ends. Each switch blanks the screen briefly.") + "\n\n" +
-                          qsTr("\"Only while fullscreen and in front\" also switches back 2 seconds after the stream leaves fullscreen or the front (overview, another workspace or window), and to HDR 2 seconds after it returns.")
+                          qsTr("\"Fullscreen focused\" also switches back 2 seconds after the stream leaves fullscreen or loses focus (another workspace or window; the overview first has to close), and to HDR 2 seconds after it returns.")
         }
 
         Label {

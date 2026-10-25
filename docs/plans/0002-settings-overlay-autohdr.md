@@ -423,7 +423,7 @@ worker:
 - [ ] Quitting the stream restores **SDR Native** (not "default"). `monitors.xml` is unchanged.
 - [x] Panel already in HDR before the stream → untouched during the stream and left in HDR after.
 - [x] `kill -9` of Moonlight mid-stream → the next Moonlight launch restores SDR Native.
-- [ ] Fullscreen-only mode: windowed → SDR Native; fullscreen → HDR after ~2 s; back to windowed
+- [x] Fullscreen-only mode: windowed → SDR Native; fullscreen → HDR after ~2 s; back to windowed
       → SDR Native after ~2 s. Fullscreen but not in front (overview, other workspace or window)
       → SDR Native after ~2 s; back to the stream → HDR after ~2 s.
 - [ ] Setting Off → no D-Bus writes (log shows none).
@@ -472,7 +472,7 @@ streams", GPU timing log **on**.
 - **D. Crash recovery:** start a stream (panel goes HDR), then in another terminal
   `pkill -9 -f '^./app/moonlight'`. The panel stays HDR. Launch `./app/moonlight` again: the
   panel returns to SDR Native at launch.
-- **E. Fullscreen-only:** set "During HDR streams, only while fullscreen and in front". Start the
+- **E. Fullscreen-only:** set "During HDR streams (fullscreen focused)". Start the
   stream, Ctrl+Alt+Shift+X to windowed (SDR Native after ~2 s), and back (HDR after ~2 s).
   - Then, still fullscreen, swipe up with three fingers (overview) or switch workspace: SDR Native
     after ~2 s. Back to the stream: HDR after ~2 s.
@@ -644,7 +644,7 @@ Executed locally on the laptop (2026-10-25). The remaining criteria need the har
 **Change after test E (user decision):**
 - Fullscreen-only mode now also requires the stream window to have keyboard focus. GNOME takes
   focus away for the overview, another workspace or Alt+Tab.
-- The mode's label is now "During HDR streams, only while fullscreen and in front", and the
+- The mode's label is now "During HDR streams (fullscreen focused)" (wording chosen by the user), and the
   tooltip explains it.
 - "During HDR streams" still ignores focus.
 - The focus state comes from the existing window-event hook (`SDL_WINDOW_INPUT_FOCUS`), so there
@@ -678,6 +678,9 @@ Executed locally on the laptop (2026-10-25). The remaining criteria need the har
   - SDR after closing to another window;
   - no switch when the overview closes back to the stream;
   - session end still restores.
+
+**E re-run (user):** with both changes, "auto hdr switch works perfectly". That covers
+Ctrl+Alt+Shift+X, the overview, other windows and returning to the stream.
 
 **Found, not changed:** with "Vulkan for SDR" on, `getDecoderInfo()`'s HEVC 8-bit probe would
 also try plvk. On the target the HEVC Main10 probe succeeds first and returns, so that probe
