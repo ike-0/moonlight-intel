@@ -54,6 +54,7 @@
 #include "streaming/session.h"
 #include "settings/streamingpreferences.h"
 #include "gui/sdlgamepadkeynavigation.h"
+#include "fork/fork.h" // moonlight-intel
 
 #if defined(Q_OS_WIN32)
 #define IS_UNSPECIFIED_HANDLE(x) ((x) == INVALID_HANDLE_VALUE || (x) == NULL)
@@ -968,6 +969,7 @@ int main(int argc, char *argv[])
                                                    [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {
                                                        return StreamingPreferences::get(qmlEngine);
                                                    });
+    Fork::initialize(); // moonlight-intel: IntelPreferences singleton, desktop-HDR controller
 
     // Create the identity manager on the main thread
     IdentityManager::get();

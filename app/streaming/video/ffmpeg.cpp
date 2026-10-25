@@ -50,6 +50,8 @@ extern "C" {
 #include "ffmpeg-renderers/plvk.h"
 #endif
 
+#include "fork/fork.h" // moonlight-intel
+
 // This is gross but it allows us to use sizeof()
 #include "ffmpeg_videosamples.cpp"
 
@@ -408,7 +410,7 @@ bool FFmpegVideoDecoder::createFrontendRenderer(PDECODER_PARAMETERS params, bool
         else
         {
 #ifdef HAVE_LIBPLACEBO_VULKAN
-            if (qgetenv("PREFER_VULKAN") == "1") {
+            if (qgetenv("PREFER_VULKAN") == "1" || Fork::preferVulkanForSdr()) { // moonlight-intel: Fork::preferVulkanForSdr()
                 m_FrontendRenderer = new PlVkRenderer(AV_HWDEVICE_TYPE_NONE, m_BackendRenderer);
                 if (initializeRendererInternal(m_FrontendRenderer, params)) {
                     return true;
@@ -974,6 +976,8 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
 
         offset += ret;
     }
+
+    Fork::appendOverlayStats(&output[offset], length - offset, m_StreamFps); // moonlight-intel
 }
 
 void FFmpegVideoDecoder::logVideoStats(VIDEO_STATS& stats, const char* title)

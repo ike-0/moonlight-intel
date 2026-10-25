@@ -17,6 +17,7 @@ extern "C" {
 #include <vector>
 #include <set>
 #include <algorithm> // moonlight-intel
+#include "fork/fork.h" // moonlight-intel
 
 #ifndef VK_KHR_video_decode_av1
 #define VK_KHR_VIDEO_DECODE_AV1_EXTENSION_NAME "VK_KHR_video_decode_av1"
@@ -156,12 +157,12 @@ PlVkRenderer::PlVkRenderer(AVHWDeviceType hwDeviceType, IFFmpegRenderer *backend
 
     m_Log = pl_log_create(PL_API_VER, &logParams);
 
-    // moonlight-intel: own copy of the render params; the timing callback is opt-in
+    // moonlight-intel: own copy of the render params. The timing callback is always installed
+    // (libplacebo times every pass anyway); only the GPU time log is opt-in.
     m_RenderParams = pl_render_fast_params;
-    if (qEnvironmentVariableIntValue("MOONLIGHT_INTEL_GPU_TIMING")) {
-        m_RenderParams.info_callback = gpuTimingCallback;
-        m_RenderParams.info_priv = this;
-    }
+    m_RenderParams.info_callback = gpuTimingCallback;
+    m_RenderParams.info_priv = this;
+    m_GpuTimeLogEnabled = Fork::logGpuTiming() || qEnvironmentVariableIntValue("MOONLIGHT_INTEL_GPU_TIMING");
 }
 
 PlVkRenderer::~PlVkRenderer()
@@ -1102,7 +1103,7 @@ void PlVkRenderer::renderFrame(AVFrame *frame)
                      "pl_render_image() failed");
         // NB: We must fallthrough to call pl_swapchain_submit_frame()
     }
-    recordGpuTime(); // moonlight-intel
+    recordRenderStats(&mappedFrame, &targetFrame); // moonlight-intel
 
     // Submit the frame for display and swap buffers
     m_HasPendingSwapchainFrame = false;
@@ -1421,79 +1422,225 @@ void PlVkRenderer::logFrameInfo(const pl_frame* source)
                 pl_color_transfer_name(source->color.transfer));
 }
 
+// moonlight-intel: true for OSD overlay passes. libplacebo starts each with an "overlay" step and
+// converts the overlay's colours in the same shader, so the full description is e.g.
+// "overlay, color decoding, colorspace conversion, color encoding" on an HDR target.
+static bool isOverlayPass(pl_shader_info shader)
+{
+    return shader != nullptr && shader->num_steps > 0 && strcmp(shader->steps[0], "overlay") == 0;
+}
+
+// moonlight-intel: true for libplacebo's scaler passes, "<stage> upscaling (<filter>)" and
+// "... downscaling (...)". Plan 0003 adds user-hook passes here, by their //!DESC.
+static bool isScalingPass(pl_shader_info shader)
+{
+    if (shader == nullptr) {
+        return false;
+    }
+
+    for (int i = 0; i < shader->num_steps; i++) {
+        if (strstr(shader->steps[i], "scaling (") != nullptr) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// moonlight-intel: average, p99 and max in ms. Reorders the samples.
+static void summarizeGpuTimes(std::vector<uint64_t>& samplesNs, double* avgMs, double* p99Ms, double* maxMs)
+{
+    uint64_t sumNs = 0, maxNs = 0;
+    for (uint64_t ns : samplesNs) {
+        sumNs += ns;
+        maxNs = SDL_max(maxNs, ns);
+    }
+
+    auto p99 = samplesNs.begin() + (samplesNs.size() - 1) * 99 / 100;
+    std::nth_element(samplesNs.begin(), p99, samplesNs.end());
+
+    *avgMs = sumNs / 1e6 / samplesNs.size();
+    *p99Ms = *p99 / 1e6;
+    *maxMs = maxNs / 1e6;
+}
+
+// moonlight-intel: short colour-space names for the stats overlay. libplacebo's own names
+// (pl_color_*_name) are descriptive and too long for it.
+static void shortPrimariesName(pl_color_primaries primaries, char* name, size_t length)
+{
+    switch (primaries) {
+    case PL_COLOR_PRIM_BT_709:
+        snprintf(name, length, "BT.709");
+        break;
+    case PL_COLOR_PRIM_BT_2020:
+        snprintf(name, length, "BT.2020");
+        break;
+    case PL_COLOR_PRIM_DCI_P3:
+    case PL_COLOR_PRIM_DISPLAY_P3:
+        snprintf(name, length, "P3");
+        break;
+    default:
+        snprintf(name, length, "prim#%d", (int)primaries);
+        break;
+    }
+}
+
+static void shortTransferName(pl_color_transfer transfer, char* name, size_t length)
+{
+    switch (transfer) {
+    case PL_COLOR_TRC_SRGB:
+        snprintf(name, length, "sRGB");
+        break;
+    case PL_COLOR_TRC_BT_1886:
+        snprintf(name, length, "BT.1886");
+        break;
+    case PL_COLOR_TRC_PQ:
+        snprintf(name, length, "PQ");
+        break;
+    case PL_COLOR_TRC_HLG:
+        snprintf(name, length, "HLG");
+        break;
+    case PL_COLOR_TRC_GAMMA22:
+        snprintf(name, length, "G2.2");
+        break;
+    case PL_COLOR_TRC_LINEAR:
+        snprintf(name, length, "linear");
+        break;
+    default:
+        snprintf(name, length, "trc#%d", (int)transfer);
+        break;
+    }
+}
+
 // moonlight-intel: called by libplacebo for each shader pass inside pl_render_image()
 void PlVkRenderer::gpuTimingCallback(void* priv, const pl_render_info* info)
 {
     auto me = (PlVkRenderer*)priv;
+    pl_shader_info shader = info->pass->shader;
+    bool overlay = isOverlayPass(shader);
 
-    me->m_GpuTimeFrameNs += info->pass->last;
+    // Excluding the OSD keeps the video time the same whether the stats overlay is on or off
+    if (!overlay) {
+        me->m_GpuTimeFrameNs += info->pass->last;
+    }
+    if (isScalingPass(shader)) {
+        me->m_GpuScalingFrameNs += info->pass->last;
+    }
 
-    if (!me->m_GpuTimePassesLogged) {
-        const char* description = info->pass->shader->description;
+    if (me->m_GpuTimeLogEnabled && !me->m_GpuTimePassesLogged) {
+        const char* description = shader != nullptr ? shader->description : nullptr;
         me->m_GpuTimePasses.push_back({ description ? description : "?",
-                                        info->pass->last, info->pass->average });
+                                        info->pass->last, info->pass->average, overlay });
     }
 }
 
 // moonlight-intel: called after each pl_render_image(). Pass timers are read back
 // asynchronously, so values lag a frame or two and read 0 at first; zero frames are skipped.
-void PlVkRenderer::recordGpuTime()
+void PlVkRenderer::recordRenderStats(const pl_frame* source, const pl_frame* target)
 {
-    if (m_RenderParams.info_callback == nullptr) {
-        return;
-    }
-
     if (m_GpuTimeFrameNs > 0) {
-        m_GpuTimeSamplesNs.push_back(m_GpuTimeFrameNs);
+        m_StatsSamplesNs.push_back(m_GpuTimeFrameNs);
+        m_StatsScalingNs += m_GpuScalingFrameNs;
+        if (m_GpuTimeLogEnabled) {
+            m_GpuTimeSamplesNs.push_back(m_GpuTimeFrameNs);
+        }
     }
-    else {
+    else if (m_GpuTimeLogEnabled) {
         m_GpuTimeSkippedFrames++;
     }
 
     Uint32 now = SDL_GetTicks();
-    if (m_GpuTimeWindowStart == 0) {
-        m_GpuTimeWindowStart = now;
+    if (m_StatsWindowStart == 0) {
+        m_StatsWindowStart = now;
     }
-    else if (now - m_GpuTimeWindowStart >= 5000) {
-        if (m_GpuTimeSamplesNs.empty()) {
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                        "moonlight-intel: gpu-time no timer data skipped=%d",
-                        m_GpuTimeSkippedFrames);
-        }
-        else {
-            uint64_t sumNs = 0, maxNs = 0;
-            for (uint64_t ns : m_GpuTimeSamplesNs) {
-                sumNs += ns;
-                maxNs = SDL_max(maxNs, ns);
-            }
+    else if (now - m_StatsWindowStart >= 1000) {
+        publishRenderStats(source, target);
+        m_StatsWindowStart = now;
+    }
 
-            auto p99 = m_GpuTimeSamplesNs.begin() + (m_GpuTimeSamplesNs.size() - 1) * 99 / 100;
-            std::nth_element(m_GpuTimeSamplesNs.begin(), p99, m_GpuTimeSamplesNs.end());
-
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                        "moonlight-intel: gpu-time avg=%.2f p99=%.2f max=%.2f ms frames=%d skipped=%d",
-                        sumNs / 1e6 / m_GpuTimeSamplesNs.size(), *p99 / 1e6, maxNs / 1e6,
-                        (int)m_GpuTimeSamplesNs.size(), m_GpuTimeSkippedFrames);
-        }
-
-        // Log the pass breakdown once, from a frame that has timer data
-        if (!m_GpuTimePassesLogged && m_GpuTimeFrameNs > 0) {
-            for (size_t i = 0; i < m_GpuTimePasses.size(); i++) {
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                            "moonlight-intel: gpu-pass[%d] last=%.3f avg=%.3f ms: %s",
-                            (int)i,
-                            m_GpuTimePasses[i].lastNs / 1e6,
-                            m_GpuTimePasses[i].averageNs / 1e6,
-                            m_GpuTimePasses[i].description.c_str());
-            }
-            m_GpuTimePassesLogged = true;
-        }
-
-        m_GpuTimeSamplesNs.clear();
-        m_GpuTimeSkippedFrames = 0;
-        m_GpuTimeWindowStart = now;
+    if (m_GpuTimeLogEnabled) {
+        logGpuTime(now);
     }
 
     m_GpuTimeFrameNs = 0;
+    m_GpuScalingFrameNs = 0;
     m_GpuTimePasses.clear();
+}
+
+// moonlight-intel: publishes the last ~1 s to the stats overlay and the desktop-HDR controller
+void PlVkRenderer::publishRenderStats(const pl_frame* source, const pl_frame* target)
+{
+    Fork::RenderStatsSnapshot stats = {};
+
+    stats.gpuSamples = (int)m_StatsSamplesNs.size();
+    if (stats.gpuSamples > 0) {
+        summarizeGpuTimes(m_StatsSamplesNs, &stats.gpuAvgMs, &stats.gpuP99Ms, &stats.gpuMaxMs);
+        stats.scalingAvgMs = m_StatsScalingNs / 1e6 / stats.gpuSamples;
+    }
+
+    stats.sourceWidth = (int)pl_rect_w(source->crop);
+    stats.sourceHeight = (int)pl_rect_h(source->crop);
+    stats.targetWidth = (int)pl_rect_w(target->crop);
+    stats.targetHeight = (int)pl_rect_h(target->crop);
+
+    // A NULL upscaler means plain (bilinear) texture sampling
+    const pl_filter_config* upscaler = m_RenderParams.upscaler;
+    snprintf(stats.scaler, sizeof(stats.scaler), "%s",
+             upscaler == nullptr ? "bilinear" : (upscaler->name ? upscaler->name : "custom"));
+
+    const pl_color_space& swapchainColor = m_SwapchainFrame.color_space;
+    stats.swapchainWidth = m_SwapchainFrame.fbo->params.w;
+    stats.swapchainHeight = m_SwapchainFrame.fbo->params.h;
+    shortTransferName(swapchainColor.transfer, stats.swapchainTransfer, sizeof(stats.swapchainTransfer));
+    shortPrimariesName(swapchainColor.primaries, stats.swapchainPrimaries, sizeof(stats.swapchainPrimaries));
+    stats.swapchainHdr = pl_color_space_is_hdr(&swapchainColor);
+    stats.sourceHdr = pl_color_space_is_hdr(&source->color);
+
+    m_RenderStats.publish(stats);
+
+    m_StatsSamplesNs.clear();
+    m_StatsScalingNs = 0;
+}
+
+// moonlight-intel: logs video GPU time every 5 s, plus the pass breakdown once
+void PlVkRenderer::logGpuTime(Uint32 now)
+{
+    if (m_GpuTimeWindowStart == 0) {
+        m_GpuTimeWindowStart = now;
+        return;
+    }
+    if (now - m_GpuTimeWindowStart < 5000) {
+        return;
+    }
+
+    if (m_GpuTimeSamplesNs.empty()) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "moonlight-intel: gpu-time(video) no timer data skipped=%d",
+                    m_GpuTimeSkippedFrames);
+    }
+    else {
+        double avgMs, p99Ms, maxMs;
+        summarizeGpuTimes(m_GpuTimeSamplesNs, &avgMs, &p99Ms, &maxMs);
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "moonlight-intel: gpu-time(video) avg=%.2f p99=%.2f max=%.2f ms frames=%d skipped=%d",
+                    avgMs, p99Ms, maxMs, (int)m_GpuTimeSamplesNs.size(), m_GpuTimeSkippedFrames);
+    }
+
+    // Log the pass breakdown once, from a frame that has timer data
+    if (!m_GpuTimePassesLogged && m_GpuTimeFrameNs > 0) {
+        for (size_t i = 0; i < m_GpuTimePasses.size(); i++) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "moonlight-intel: gpu-pass[%d] last=%.3f avg=%.3f ms: %s%s",
+                        (int)i,
+                        m_GpuTimePasses[i].lastNs / 1e6,
+                        m_GpuTimePasses[i].averageNs / 1e6,
+                        m_GpuTimePasses[i].description.c_str(),
+                        m_GpuTimePasses[i].overlay ? " (overlay, not in video time)" : "");
+        }
+        m_GpuTimePassesLogged = true;
+    }
+
+    m_GpuTimeSamplesNs.clear();
+    m_GpuTimeSkippedFrames = 0;
+    m_GpuTimeWindowStart = now;
 }

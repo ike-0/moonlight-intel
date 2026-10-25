@@ -1812,5 +1812,7 @@ Flickable {
                 }
             }
         }
+
+        IntelSettingsGroup {} // moonlight-intel
     }
 }
