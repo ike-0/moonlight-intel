@@ -421,7 +421,7 @@ worker:
 - [x] With the setting on and the panel in SDR Native, an HDR stream switches the panel to HDR
       with no dialog, and the overlay shows `desktop HDR: on (auto, …)`.
 - [ ] Quitting the stream restores **SDR Native** (not "default"). `monitors.xml` is unchanged.
-- [ ] Panel already in HDR before the stream → untouched during the stream and left in HDR after.
+- [x] Panel already in HDR before the stream → untouched during the stream and left in HDR after.
 - [x] `kill -9` of Moonlight mid-stream → the next Moonlight launch restores SDR Native.
 - [ ] Fullscreen-only mode: windowed → SDR Native; fullscreen → HDR after ~2 s; back to windowed
       → SDR Native after ~2 s.
@@ -624,6 +624,10 @@ Executed locally on the laptop (2026-10-25). The remaining criteria need the har
       (overlay, not in video time)`.
 - **D. Crash recovery:** after `kill -9` mid-stream the panel stayed in HDR. The next launch
   restored `sdr-native`.
+- **C. Already HDR:** with GNOME HDR turned on by hand, the overlay showed
+  `Output: 2880x1800 PQ BT.2020, desktop HDR: on (already on)`, and HDR stayed on after
+  quitting. Video GPU time: 0.48 avg / 0.53 p99 / 0.57 max ms.
+- **monitors.xml:** `sha256sum -c /tmp/ml-0002-monitors.sha` → `OK` after tests A–D.
 
 **Found, not changed:** with "Vulkan for SDR" on, `getDecoderInfo()`'s HEVC 8-bit probe would
 also try plvk. On the target the HEVC Main10 probe succeeds first and returns, so that probe
