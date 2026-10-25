@@ -2,6 +2,7 @@
 #include "settings/streamingpreferences.h"
 #include "streaming/streamutils.h"
 #include "backend/richpresencemanager.h"
+#include "fork/fork.h" // moonlight-intel
 
 #include <Limelight.h>
 #include "SDL_compat.h"
@@ -200,6 +201,7 @@ void Session::clConnectionStatusUpdate(int connectionStatus)
 
 void Session::clSetHdrMode(bool enabled)
 {
+    Fork::notifyHostHdr(enabled); // moonlight-intel: never dropped, unlike the decoder call below
     // If we're in the process of recreating our decoder when we get
     // this callback, we'll drop it. The main thread will make the
     // callback when it finishes creating the new decoder.
@@ -1890,6 +1892,7 @@ void Session::exec()
     }
 
     m_InputHandler->setWindow(m_Window);
+    Fork::sessionStarted(m_Window); // moonlight-intel
 
     QSvgRenderer svgIconRenderer(QString(":/res/moonlight.svg"));
     QImage svgImage(ICON_SIZE, ICON_SIZE, QImage::Format_RGBA8888);
@@ -2055,6 +2058,7 @@ void Session::exec()
             break;
 
         case SDL_WINDOWEVENT:
+            Fork::notifyWindowState(m_Window); // moonlight-intel
             // Early handling of some events
             switch (event.window.event) {
             case SDL_WINDOWEVENT_FOCUS_LOST:
@@ -2251,6 +2255,7 @@ void Session::exec()
             // Set HDR mode. We may miss the callback if we're in the middle
             // of recreating our decoder at the time the HDR transition happens.
             m_VideoDecoder->setHdrMode(LiGetCurrentHostDisplayHdrMode());
+            Fork::notifyHostHdr(LiGetCurrentHostDisplayHdrMode()); // moonlight-intel
 
             // After a window resize, we need to reset the pointer lock region
             m_InputHandler->updatePointerRegionLock();
@@ -2321,6 +2326,7 @@ void Session::exec()
     }
 
 DispatchDeferredCleanup:
+    Fork::sessionEnded(); // moonlight-intel: restores desktop HDR, waits up to 3 s
     // Switch back to synchronous logging mode
     StreamUtils::exitAsyncLoggingMode();
 
