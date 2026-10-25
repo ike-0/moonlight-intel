@@ -82,7 +82,7 @@ a crash. Each switch logs a `moonlight-intel: desktop-hdr …` line.
 
 ```bash
 # Inspect the current colour mode (read-only)
-gdctl show --properties | grep -iE '^Monitor|color-mode'
+gdctl show --properties | grep -E 'Monitor |color-mode'
 ```
 
 ## Diagnostics

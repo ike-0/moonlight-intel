@@ -436,15 +436,16 @@ worker:
 
 ```bash
 # 0. GNOME in SDR Native, HDR off. Record the starting state (no Moonlight running).
-gdctl show --properties | grep -iE '^Monitor|Color mode'
+gdctl show --properties | grep -E 'Monitor |color-mode'   # expect color-mode ⇒ sdr-native
 sha256sum ~/.config/monitors.xml > /tmp/ml-0002-monitors.sha
 
-# 1. Build
+# 1. Build (starts at the repo root, so it works from any directory)
+cd ~/repos/moonlight-intel
 git switch claude/0002-settings-overlay-autohdr && git pull
 git submodule update --init --recursive
 mkdir -p build && cd build && qmake6 ../moonlight-qt.pro && make -j"$(nproc)" release
 
-# 2. Run (from build/)
+# 2. Run (from build/, where step 1 leaves you)
 ./app/moonlight 2>&1 | tee /tmp/ml-0002.log
 ```
 
@@ -460,8 +461,8 @@ streams", GPU timing log **on**.
   - Quit the stream: one blank, back to SDR Native.
   - Check:
     ```bash
-    gdctl show --properties | grep -iE 'Color mode'     # expect SDR native
-    sha256sum -c /tmp/ml-0002-monitors.sha              # expect OK
+    gdctl show --properties | grep -E 'Monitor |color-mode'   # expect color-mode ⇒ sdr-native
+    sha256sum -c /tmp/ml-0002-monitors.sha                    # expect OK
     ```
 - **B. Overlay timing:** while streaming, read `gpu-time(video)` lines with the overlay on and
   off. The values should agree within noise.
@@ -577,6 +578,13 @@ Executed locally on the laptop (2026-10-25). The remaining criteria need the har
   the option disabled.
 - **Restore timing.** `sessionEnded()` sits right after `DispatchDeferredCleanup:`, so the
   restore blank happens while the stream window is still up and before the mouse is released.
+
+**Hardware test fixes (found in PR review):**
+- `gdctl` prints `color-mode ⇒ sdr-native`, not "Color mode … SDR native", and `^Monitor` only
+  matched the `Monitors:` header. Both `gdctl` checks now use `grep -E 'Monitor |color-mode'`.
+- Step 1 assumed the repo root as the working directory. Run from `build/`, it made
+  `build/build/` and couldn't find `../moonlight-qt.pro`. It now starts with
+  `cd ~/repos/moonlight-intel`.
 
 **Found, not changed:** with "Vulkan for SDR" on, `getDecoderInfo()`'s HEVC 8-bit probe would
 also try plvk. On the target the HEVC Main10 probe succeeds first and returns, so that probe
