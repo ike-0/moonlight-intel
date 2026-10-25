@@ -5,7 +5,7 @@
 | Status | In review |
 | Created | 2026-10-25 |
 | Branch | `claude/0002-settings-overlay-autohdr` |
-| PR | — |
+| PR | ike-0/moonlight-intel PR 3 |
 
 ## Goal
 
