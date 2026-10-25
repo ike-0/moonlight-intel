@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | In review |
+| Status | Done |
 | Created | 2026-10-25 |
 | Branch | `claude/0001-arch-build-hdr-baseline` |
 | PR | ike-0/moonlight-intel PR 1 |
@@ -189,17 +189,42 @@ network latency.
 
 If any of these fail, that is the finding. Record it and don't work around it in this plan.
 
-## Baseline results (user fills in)
+## Baseline results
 
-| Item | Run A 1728×1080 | Run B 1920×1200 |
-|---|---|---|
-| Renderer chain (backend → frontend) | | |
-| HDR active (y/n), swapchain colour space | | |
-| Swapchain size | | |
-| GNOME scale % | | |
-| libplacebo gpu-time avg / p99 / max (ms) | | |
-| Overlay: decode / render (ms), drops | | |
-| intel_gpu_top: Render/3D %, Video % | | |
+Measured by the user on 2026-10-25, recorded from the planning chat.
+
+**Scope change (user decision, after merge):** Run A (1728×1080) is dropped. All fork work
+targets a **1920×1200** source, which upscales exactly ×1.5 to the 2880×1800 panel. A separate
+HEVC run was skipped; the baseline is AV1.
+
+**Conditions:**
+- AV1 Main10, 1920×1200 @ 120 fps.
+- HDR on: host and GNOME.
+- V-Sync and frame pacing on, fullscreen.
+- Moving content: UFO test, scrolling.
+- `MOONLIGHT_INTEL_GPU_TIMING=1`, run ~90 s.
+
+| Item | Run B 1920×1200 (AV1) |
+|---|---|
+| Renderer chain (backend → frontend) | VAAPI → Vulkan (libplacebo) |
+| HDR active (y/n), swapchain colour space | y; BT.709/sRGB on frame 1 → BT.2020/PQ `hdr=on` from frame 2 |
+| Swapchain size | 2880×1800 (native, not the 166% logical size) |
+| GNOME scale % | 166 |
+| libplacebo gpu-time avg / p99 / max (ms) | 0.35–0.47 / 0.48–0.53 / ≤ 0.57 (per 5 s window, 16 windows) |
+| Frames rendered per 5 s window | 594–600, i.e. ≈ 119.4 fps; 0 timer-less frames after the first window |
+| libplacebo passes | 1: `color decoding, color encoding` (fused decode + bilinear + PQ encode) |
+| Overlay: decode / render (ms), drops | not recorded |
+| gputop: render %, video % | moonlight: rcs 7.6 %, vcs 34.2 %; gnome-shell: rcs 5.1 %; GT0 800 MHz, GT1 (media) 400 MHz |
+
+**Reading:**
+- **Render budget.** Libplacebo uses ≈ 0.45 ms of the T = 1/f = 8.33 ms frame period at
+  f = 120 Hz, about 5–6 %, and that is at a low 800 MHz GT0 clock.
+- **Decode budget.** VA-API decode keeps the video engine (vcs) busy 34 % of the time. With U as
+  the busy fraction, that is U·T ≈ 0.342 × 8.33 ≈ 2.8 ms per frame, at a 400 MHz media clock.
+- **Compositor.** gnome-shell spends ~5 % of render-engine time while the stream is fullscreen
+  (≈ 0.4 ms per frame). That suggests Mutter composites the HDR surface instead of scanning it
+  out directly. This is noted for a possible later investigation; it isn't a blocker.
+- **Run C** (GNOME in SDR Native with an HDR stream) is folded into plan 0002's hardware test A.
 
 ## Risks and upstream-merge impact
 
