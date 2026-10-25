@@ -5,7 +5,7 @@
 | Status | In review |
 | Created | 2026-10-25 |
 | Branch | `claude/0001-arch-build-hdr-baseline` |
-| PR | — |
+| PR | ike-0/moonlight-intel PR 1 |
 
 ## Goal
 
