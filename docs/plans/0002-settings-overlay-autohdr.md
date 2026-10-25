@@ -420,13 +420,13 @@ worker:
       on/off doesn't shift the logged `gpu-time(video)` value beyond noise.
 - [x] With the setting on and the panel in SDR Native, an HDR stream switches the panel to HDR
       with no dialog, and the overlay shows `desktop HDR: on (auto, …)`.
-- [ ] Quitting the stream restores **SDR Native** (not "default"). `monitors.xml` is unchanged.
+- [x] Quitting the stream restores **SDR Native** (not "default"). `monitors.xml` is unchanged.
 - [x] Panel already in HDR before the stream → untouched during the stream and left in HDR after.
 - [x] `kill -9` of Moonlight mid-stream → the next Moonlight launch restores SDR Native.
 - [x] Fullscreen-only mode: windowed → SDR Native; fullscreen → HDR after ~2 s; back to windowed
       → SDR Native after ~2 s. Fullscreen but not in front (overview, other workspace or window)
       → SDR Native after ~2 s; back to the stream → HDR after ~2 s.
-- [ ] Setting Off → no D-Bus writes (log shows none).
+- [x] Setting Off → no D-Bus writes (log shows none).
 - [ ] SDR stream with the SDR-Vulkan setting on → log `Renderer 'Vulkan (libplacebo)' with 'VAAPI'
       backend chosen`, and the overlay lines appear. Setting off → `Renderer 'EGL/GLES' …`, as
       upstream.
@@ -681,6 +681,31 @@ Executed locally on the laptop (2026-10-25). The remaining criteria need the har
 
 **E re-run (user):** with both changes, "auto hdr switch works perfectly". That covers
 Ctrl+Alt+Shift+X, the overview, other windows and returning to the stream.
+
+**A, normal quit (user):** after quitting, the panel is `color-mode ⇒ sdr-native`. The switch
+happens as the stream exits.
+
+**F. Off (user):** nothing happens: the panel doesn't change and there are no switches. The
+Run C question (does the second `frame` line reach `BT.2020/PQ hdr=on` with GNOME in SDR
+Native?) is still unanswered.
+
+**G. SDR renderer, setting on (user log):**
+- The log shows `Renderer 'Vulkan (libplacebo)' with 'VAAPI' backend chosen` and an 8-bit AV1
+  stream (nv12).
+- The `frame` lines show the swapchain going from BT.709/sRGB to BT.709/BT.1886, `hdr=off`. The
+  source is BT.709/BT.1886.
+- `gpu-time(video)` is 0.65–0.67 avg / 0.67–0.68 p99 / ≤ 0.72 ms max, with the stats overlay on
+  and off (toggled at 35 s). So overlay exclusion also holds on an SDR target.
+- The pass list is one pass, `color decoding, color encoding`: the same fused pass as HDR, and no
+  dithering step.
+- The early windows have only 157–308 frames per 5 s, with 571–597 later. That looks like the
+  host sending fewer frames for static content; it isn't a render issue.
+- **Observation, not a bug:** the SDR pass takes about 0.66 ms, against 0.33–0.47 ms for HDR,
+  with the same single pass and no extra steps.
+  - A likely cause is a lower GPU clock while the desktop is SDR, but that hasn't been measured.
+  - It is still about 8 % of the 8.33 ms frame. Worth a `gputop` look in plan 0003, when the
+    upscaler adds real GPU work.
+- **Open:** the second half of G (setting off → `Renderer 'EGL/GLES'`).
 
 **Found, not changed:** with "Vulkan for SDR" on, `getDecoderInfo()`'s HEVC 8-bit probe would
 also try plvk. On the target the HEVC Main10 probe succeeds first and returns, so that probe
