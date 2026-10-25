@@ -98,6 +98,12 @@ this repo at `intel` + PR 1. Line numbers are approximate; re-check them.
     `BT.2020/PQ hdr=on` on frame 2. The swapchain is native 2880×1800 at 166% scale.
   - libplacebo time: 0.48 ms avg / 0.52 ms p99, in one fused pass,
     `"color decoding, color encoding"`.
+  - Baseline with moving content (PR 2):
+    - 0.35–0.47 ms avg / ≤ 0.53 ms p99 GPU time;
+    - ≈ 119.4 fps rendered;
+    - gputop: moonlight rcs 7.6 %, vcs 34.2 %; gnome-shell rcs 5.1 % (Mutter likely composites
+      rather than scanning out);
+    - GT0 at 800 MHz.
   - The `Using Mailbox present mode with V-Sync disabled` warnings come only from the test-only
     decoder probes, which always run with V-Sync off (`session.cpp` ~L288 asserts
     `!enableVsync || !testOnly`). The real stream uses FIFO and logs nothing.
@@ -154,7 +160,8 @@ this repo at `intel` + PR 1. Line numbers are approximate; re-check them.
     the user). `gputop` (igt, `intel-gpu-tools` package) reads per-client DRM fdinfo.
   - Places: `CLAUDE.md` "Useful:" line, `docs/arch.md` diagnostics (~L85), and the 0001
     Baseline-results row label (`intel_gpu_top: Render/3D %, Video %` →
-    `gputop: render %, video %`).
+    `gputop: render %, video %`). The 0001 table row was already renamed in PR 2 (baseline
+    results); skip it if it's done.
   - Check `gputop -h` for the actual options and don't invent flags. Note whether `sudo` is
     needed; fdinfo of your own processes is normally readable without it.
 
@@ -263,7 +270,7 @@ it at runtime.
 - Formats (ASCII only, since the overlay font may lack glyphs):
   ```
   GPU render (video): 1.21 ms avg / 1.65 p99 / 2.10 max of 8.33 ms frame
-  Scaling: 1728x1080 -> 2880x1800 (x1.67), bilinear
+  Scaling: 1920x1200 -> 2880x1800 (x1.50), bilinear
   Output: 2880x1800 PQ BT.2020, desktop HDR: on (auto, eDP-1)
   ```
   - Frame budget = 1000 / stream fps.
@@ -441,8 +448,9 @@ mkdir -p build && cd build && qmake6 ../moonlight-qt.pro && make -j"$(nproc)" re
 ./app/moonlight 2>&1 | tee /tmp/ml-0002.log
 ```
 
-**Stream settings:** 1728×1080, 120 fps, HEVC, HDR on, ~80 Mbps, V-Sync on, frame pacing on,
-fullscreen. The host desktop or game must be in HDR. In Settings → `moonlight-intel`: "During HDR
+**Stream settings:** 1920×1200, 120 fps, AV1, HDR on, V-Sync on, frame pacing on, fullscreen,
+moving content (e.g. a scrolling UFO test). The 1728×1080 source was dropped: all fork work
+targets 1920×1200. The host desktop or game must be in HDR. In Settings → `moonlight-intel`: "During HDR
 streams", GPU timing log **on**.
 
 **Tests:**
@@ -464,7 +472,10 @@ streams", GPU timing log **on**.
   panel returns to SDR Native at launch.
 - **E. Fullscreen-only:** set "During HDR streams, fullscreen only". Start the stream,
   Ctrl+Alt+Shift+X to windowed (SDR Native after ~2 s), and back (HDR after ~2 s).
-- **F. Off:** set Off. A stream must not change the panel, and the log has no `desktop-hdr` writes.
+- **F. Off (doubles as 0001's Run C):** set Off, GNOME in SDR Native, and stream HDR.
+  - The panel must not change, and the log has no `desktop-hdr` writes.
+  - Note whether the second `frame` line reaches `BT.2020/PQ hdr=on`. If yes, Mesa offers PQ
+    while the desktop is SDR, and the renderer-recreate fallback is only a safety net.
 - **G. SDR renderer:** in Moonlight's Basic Settings untick *Enable HDR* and stream.
   - The log shows `Renderer 'Vulkan (libplacebo)' with 'VAAPI' backend chosen`.
   - The overlay shows the GPU/Scaling/Output lines.
