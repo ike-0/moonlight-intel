@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(~/.config/Moonlight Game Streaming Project/**)",
+      "Read(~/.var/app/com.moonlight_stream.Moonlight/**)",
+      "Read(~/.config/sunshine/**)",
+      "Read(~/.ssh/**)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.config/gh/**)",
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Bash(git push --force-with-lease *)",
+      "Bash(git push upstream *)",
+      "Bash(git remote set-url origin *)"
+    ],
+    "ask": [
+      "Bash(git push *master*)",
+      "Bash(gh pr create *)",
+      "Bash(gh issue *)",
+      "Bash(gh repo *)"
+    ]
+  }
+}

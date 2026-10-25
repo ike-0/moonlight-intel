@@ -7,3 +7,17 @@ build/
 libs/
 config.tests/*/.qmake.stash
 config.tests/*/Makefile
+
+# --- moonlight-intel fork: keep secrets, LAN details and local state out of a public repo ---
+Moonlight.conf
+*.conf.bak
+*.log
+*.pem
+*.key
+*.p12
+*.pfx
+.env
+.env.*
+captures/
+CLAUDE.local.md
+.claude/settings.local.json
