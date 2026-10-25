@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | In review |
+| Status | Done |
 | Created | 2026-10-25 |
 | Branch | `claude/0002-settings-overlay-autohdr` |
 | PR | ike-0/moonlight-intel PR 3 |
@@ -724,3 +724,7 @@ never runs. Upstream's `PREFER_VULKAN=1` behaves the same way.
     unavailable.
 - Smoke run of the real binary with a scratch config: logs `moonlight-intel: desktop-hdr
   available`, reads `[moonlight-intel]`, and exits cleanly through `aboutToQuit`.
+
+**Closed (planning, 2026-10-25):** merged as PR 3. Two hardware checks were not run and move to
+plan 0003: test G's second half (setting off → `Renderer 'EGL/GLES'`) is 0003 test J, and the
+Run C question from test F (second `frame` line with GNOME in SDR Native) is 0003 test K.
