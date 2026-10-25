@@ -2,7 +2,8 @@
 
 Personal fork of `moonlight-stream/moonlight-qt`, tuned for Linux on Intel Arc / Xe graphics.
 Primary target: ThinkPad X1 Carbon Gen 13 (Lunar Lake, Arc 140V / Xe2-LPG), Arch Linux,
-KDE Plasma on Wayland, VA-API via the `iHD` driver, 2.8K 120 Hz OLED, HDR.
+GNOME on Wayland, VA-API via the `iHD` driver, 2.8K 120 Hz OLED, HDR.
+Arch packages, build and diagnostic commands for the target: `docs/arch.md`.
 
 Work is planned in claude.ai chats and handed over as plan files in `docs/plans/`.
 Execute the plan you are pointed at; don't widen its scope.
@@ -74,7 +75,7 @@ qmake6 ../moonlight-qt.pro && make -j"$(nproc)" release   # binary: build/app/mo
 - **Cloud VM (Ubuntu 24.04):** its libplacebo is older than the v7.349 the Vulkan renderer
   needs, so add `"CONFIG+=disable-libplacebo"` to qmake. `plvk.cpp` changes are therefore only
   compile-checked on the Arch machine; say so in the PR.
-- **Arch:** full build including libplacebo/Vulkan.
+- **Arch:** full build including libplacebo/Vulkan; packages in `docs/arch.md`.
 - No unit-test suite exists. Verification = clean build with no new warnings in touched files,
   plus the plan's hardware test steps run by the user.
 
