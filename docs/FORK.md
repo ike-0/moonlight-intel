@@ -15,6 +15,8 @@ resolved with intent rather than guesswork. Update it in the same PR as the chan
 | ID | Plan | Area | Files | What and why |
 |---|---|---|---|---|
 | — | — | tooling | `CLAUDE.md`, `docs/`, `.claude/settings.json`, `.gitignore` | Fork workflow scaffolding; no runtime change |
+| — | 0001 | docs | `CLAUDE.md`, `docs/arch.md` | Target desktop is GNOME; Arch packages, build and diagnostics guide. No runtime change |
+| D1 | 0001 | video / libplacebo | `plvk.cpp`, `plvk.h` | Video frames render with member `m_RenderParams` (a copy of `pl_render_fast_params`, same defaults) so later plans tune one place. Logs `moonlight-intel: frame …` (swapchain + source size and colour space) on the first frame and on change. Opt-in `MOONLIGHT_INTEL_GPU_TIMING=1` installs a libplacebo `info_callback` and logs `moonlight-intel: gpu-time …` every 5 s plus a one-time `gpu-pass[i]` breakdown. Measures plan 0002's GPU budget. Merge note: in `renderFrame()` keep `&m_RenderParams` in the `pl_render_image()` call and the hook lines around it; the rest is appended at the end of the file / class |
 
 ## Syncing with upstream
 

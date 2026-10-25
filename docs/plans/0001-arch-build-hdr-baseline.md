@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Ready |
+| Status | In review |
 | Created | 2026-10-25 |
 | Branch | `claude/0001-arch-build-hdr-baseline` |
 | PR | — |
@@ -131,15 +131,19 @@ stay cheap; record it in `docs/FORK.md`.
 
 ## Acceptance criteria
 
-- [ ] Builds with no new warnings in touched files: on Arch with libplacebo (local session), or
+- [x] Builds with no new warnings in touched files: on Arch with libplacebo (local session), or
       in the cloud with `CONFIG+=disable-libplacebo`
-- [ ] `plvk.cpp` compiles before the PR: Arch build (local), or cloud with source-built
+- [x] `plvk.cpp` compiles before the PR: Arch build (local), or cloud with source-built
       libplacebo, or flagged for the user's Arch build
-- [ ] With `MOONLIGHT_INTEL_GPU_TIMING` unset, behaviour and default log output are unchanged
+- [x] With `MOONLIGHT_INTEL_GPU_TIMING` unset, behaviour and default log output are unchanged
+      (by code inspection: identical params, no callback. The `moonlight-intel: frame` lines
+      are always on; see Execution notes)
 - [ ] With it set, a `moonlight-intel: gpu-time …` line appears every ~5 s during streaming
+      (implemented; confirm in the hardware test)
 - [ ] First-frame line logs swapchain size + colour space and source size + colour space
-- [ ] `docs/arch.md` exists; `CLAUDE.md` says GNOME
-- [ ] `docs/FORK.md` updated
+      (implemented as log-on-change; confirm in the hardware test)
+- [x] `docs/arch.md` exists; `CLAUDE.md` says GNOME
+- [x] `docs/FORK.md` updated
 - [ ] User has filled in the Baseline results table below (after merge is fine)
 
 ## Hardware test (user runs on the laptop)
@@ -206,4 +210,79 @@ If any of these fail, that is the finding. Record it and don't work around it in
 
 ## Execution notes
 
-Filled in by the executing session.
+Run as a local session on the target laptop, 2026-10-25. Cloud-only items (the
+`disable-libplacebo` build, libplacebo from source) are N/A.
+
+**Changes from the plan:**
+- **First-frame log is log-on-change (agreed with the user during the session).** libplacebo's
+  `pl_swapchain_colorspace_hint()` only sets `needs_recreate`; the swapchain is rebuilt at the
+  next `start_frame` (checked in libplacebo v7.360.1 `src/vulkan/swapchain.c`). Moonlight calls
+  `start_frame` in `waitToRender()` *before* `renderFrame()` applies the hint. So frame 1
+  always renders into the initial SDR swapchain, and a one-time line would have reported SDR
+  even when HDR works. The `moonlight-intel: frame …` line is now logged on the first frame and
+  whenever swapchain size/colour space or source size/colour space change. Expect 2–3 lines per
+  stream: SDR, then HDR, then any fullscreen resize or triple-buffer switch.
+- **The frame lines are always on, not gated by `MOONLIGHT_INTEL_GPU_TIMING`.** Scope lists them
+  separately from the opt-in timing. That is the only default-log change: a few lines per
+  stream, with one 32-byte compare per frame. Gating them is a one-line change if preferred.
+- **`gpu-time` line has an extra field:** `… frames=N skipped=M`. M counts frames whose timers
+  had not read back yet (0 ns). If no frame in a window had timer data, it logs
+  `gpu-time no timer data skipped=M` instead.
+- **Pass breakdown format:** `moonlight-intel: gpu-pass[i] last=X avg=Y ms: <shader description>`,
+  logged once from the first 5 s window that has data. `avg` is libplacebo's own per-pass
+  rolling average.
+- Source size in the frame line is the mapped frame's crop rect, i.e. what libplacebo
+  actually scales from.
+
+**Surprises / things to know:**
+- The plan's step 2 says "qmake output must include 'Vulkan support enabled via libplacebo'".
+  Top-level `qmake6` only processes the SUBDIRS project. The line is printed during `make`, as
+  `Project MESSAGE: Vulkan support enabled via libplacebo`, when `app.pro` is processed. The
+  Hardware test section is kept verbatim; `docs/arch.md` says this correctly.
+- `libvpl` is a hard dependency of Arch's `ffmpeg`, so it can't be avoided; it is only the
+  dispatcher and harmless. `vpl-gpu-rt` is already installed on this laptop, explicitly, and is
+  only optional for ffmpeg. It was left alone; Moonlight never loads it. `docs/arch.md` says
+  "don't install `vpl-gpu-rt` for Moonlight" instead of a blanket ban.
+- libplacebo field names matched the plan: `pl_render_params.info_callback`/`info_priv`,
+  `pl_render_info.pass`, `pl_dispatch_info.last`/`average`, `pl_shader_info.description`.
+- While the stats overlay (Ctrl+Alt+Shift+S) is shown, its overlay pass is included in
+  `gpu-time`. For a clean libplacebo number, read some `gpu-time` lines with the overlay off.
+- The macOS-only early render in `waitToRender()` still uses `pl_render_fast_params` and isn't
+  timed. It doesn't affect Linux.
+- Moonlight already logs the negotiated stream size (`Video stream is WxHxFPS`). Nothing
+  logged the swapchain or the actual frame colour space, so the new line duplicates nothing.
+
+**Hardware test step 0 (versions), run by the session:**
+```
+mesa 1:26.2.5-1
+vulkan-intel 1:26.2.5-1
+intel-media-driver 26.3.5-1
+libva 2.24.1-1
+ffmpeg 2:9.0.2-2
+libplacebo 7.360.1-7
+sdl2-compat 2.32.74-1
+qt6-base 6.12.0-3
+gnome-shell 1:51.1-1
+vainfo: Driver version: Intel iHD driver for Intel(R) Gen Graphics - 26.3.5 ()
+      VAProfileHEVCMain10             :	VAEntrypointVLD
+      VAProfileHEVCMain10             :	VAEntrypointEncSlice
+      VAProfileAV1Profile0            :	VAEntrypointVLD
+      VAProfileAV1Profile0            :	VAEntrypointEncSlice
+	apiVersion         = 1.4.354
+	driverName         = Intel open-source Mesa driver
+	driverInfo         = Mesa 26.2.5-arch1.1
+```
+All above the plan's minimums (Mesa ≥ 25.1, GNOME ≥ 48, libplacebo ≥ 7.349; `PL_API_VER` 360).
+Every package in `docs/arch.md`'s build and diagnostics lists is installed.
+
+**Hardware test step 2 (build), run by the session:**
+- Fresh `build/`, `qmake6 ../moonlight-qt.pro && make -j6 release`: exit 0, binary
+  `build/app/moonlight`.
+- Build log contains `Project MESSAGE: Vulkan support enabled via libplacebo`. Compile flags
+  include `-DHAVE_LIBPLACEBO_VULKAN`, `-DHAVE_LIBVA_WAYLAND`, `-DHAVE_DRM`.
+- Warnings, baseline (unmodified `a769f219`) vs this branch: identical. Both have only the 6
+  pre-existing `AVVulkanDeviceContext::lock_queue`/`unlock_queue` deprecations in `plvk.cpp`
+  (FFmpeg 9 headers), now 8 lines lower. No new warnings in `plvk.cpp`, `plvk.h` or
+  `ffmpeg.cpp`, which was recompiled because it includes `plvk.h`.
+- Not run: no stream was started (steps 1, 3 and 4 are the user's), so the new log lines have
+  not been seen live yet.
