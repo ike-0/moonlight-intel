@@ -5,7 +5,7 @@
 | Status | In review |
 | Created | 2026-10-26 |
 | Branch | `claude/0004-wayland-vsync-commit-race` |
-| PR | — |
+| PR | ike-0/moonlight-intel PR 6 |
 
 Written by the executing session from the plan 0003 hardware-test diagnosis, at the user's
 request.
