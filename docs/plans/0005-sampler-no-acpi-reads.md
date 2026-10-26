@@ -365,6 +365,6 @@ grep -E 'moonlight-intel: bench ' /tmp/ml-0005-c.log
 - **The host image was static,** so the host sent frames only when the picture changed. The
   overlay refreshes only when a frame arrives, so in B the sampler was awake for about 30 s of
   the 60 s and idled in between, as designed.
-- **In C,** 6 of 7 steps were flagged `lowframes` (82–596 frames). That doesn't affect this
+- **In C,** 6 of 7 steps were flagged `lowframes` (82–521 frames; NIS had 596). That doesn't affect this
   test, which checks the fields, but these GPU times aren't comparable with other sweeps.
 - **Still open:** D (5 min on battery with the overlay hidden, moving content).
