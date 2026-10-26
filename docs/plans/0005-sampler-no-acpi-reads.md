@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Ready |
+| Status | In review |
 | Created | 2026-10-26 |
 | Branch | `claude/0005-sampler-no-acpi-reads` |
 | PR | — |
@@ -171,12 +171,12 @@ No upstream file is touched.
 
 ## Acceptance criteria
 
-- [ ] Builds cleanly on Arch and with `CONFIG+=disable-libplacebo`; the path without
+- [x] Builds cleanly on Arch and with `CONFIG+=disable-libplacebo`; the path without
       `HAVE_UPOWER` compiles.
-- [ ] No new warnings in touched files.
-- [ ] No upstream file changed. `git diff --stat origin/intel... -- ':!app/fork' ':!docs'`
+- [x] No new warnings in touched files.
+- [x] No upstream file changed. `git diff --stat origin/intel... -- ':!app/fork' ':!docs'`
       lists only `app/app.pro`, with the change inside the fork block.
-- [ ] Harness checks of step 4 pass.
+- [x] Harness checks of step 4 pass.
 - [ ] Hardware A: on battery, overlay never shown, 60 s: 0 power-supply value reads and 0 GT0
       reads.
 - [ ] Hardware B: overlay shown: 0 power-supply value reads, GT0 reads > 0. `GPU state` has no
@@ -184,7 +184,7 @@ No upstream file is touched.
 - [ ] Hardware C: sweep on battery: the `bench` lines carry `battery=… W`. The W leaves the
       `GPU state` line after `Benchmark done`.
 - [ ] Hardware D: 5 min on battery with the overlay hidden: no periodic hitch.
-- [ ] `docs/FORK.md` and `docs/arch.md` updated.
+- [x] `docs/FORK.md` and `docs/arch.md` updated.
 
 ## Hardware test (user runs on the laptop)
 
@@ -198,13 +198,13 @@ mkdir -p build && cd build && qmake6 ../moonlight-qt.pro && make -j"$(nproc)" re
 busctl get-property org.freedesktop.UPower /org/freedesktop/UPower org.freedesktop.UPower OnBattery
 ```
 
-**Tracing.** Install strace if needed: `pacman -S --needed strace`. With `--seccomp-bpf` only
-`openat` stops the process, so the stream runs at normal speed. Run each test separately and
-quit Moonlight between runs:
+**Tracing.** strace isn't installed on the laptop: `sudo pacman -S --needed strace`. With
+`--seccomp-bpf` only `openat` stops the process, so the stream runs at normal speed. Run each
+test separately and quit Moonlight between runs:
 
 ```bash
-# X = a, b, c
-strace -f --seccomp-bpf -e trace=openat -o /tmp/ml-0005-X.strace ./app/moonlight 2>&1 | tee /tmp/ml-0005-X.log
+ml0005() { strace -f --seccomp-bpf -e trace=openat -o /tmp/ml-0005-$1.strace ~/repos/moonlight-intel/build/app/moonlight 2>&1 | tee /tmp/ml-0005-$1.log; }
+ml0005 a    # test A; then "ml0005 b" for B and "ml0005 c" for C
 ```
 
 **Stream settings:**
@@ -239,7 +239,7 @@ grep -E 'moonlight-intel: bench ' /tmp/ml-0005-c.log
 |---|---|---|---|
 | A | 0 | 0 | — |
 | B | 0 | > 0 (about 8 per second while shown) | `GPU state: battery, …` without W; `AC` within 2 s of plugging in, `battery` again after unplugging |
-| C | > 0: `power_now`, during the sweep only | > 0 | W on the line during the sweep, gone after `Benchmark done`; 7 `bench` lines with `battery=… W` |
+| C | > 0: `power_now`, during the sweep only | > 0 | W on the line during the sweep, gone after `Benchmark done`; the 7 `bench N/7` lines carry `battery=… W` (the grep also shows the `bench start` and `bench done` lines) |
 | D | — | — | no periodic (~1 s) hitch |
 
 ## Risks and upstream-merge impact
@@ -255,4 +255,77 @@ grep -E 'moonlight-intel: bench ' /tmp/ml-0005-c.log
 
 ## Execution notes
 
-Filled in by the executing session: deviations from the plan, findings, follow-ups.
+- **As designed.** The session ran on the laptop, so the Arch build, the harness and a run
+  against the real `/sys` and system bus all happened there. Implementation choices within the
+  plan:
+  - **Reader:** split as allowed. `readOnAc()` reads the Mains `online` files (the fallback) and
+    `read(onAc, batteryPower)` reads the rest. The constructor is unchanged.
+  - **Demand timestamp:** a `steady_clock` time point under the sampler's mutex, not an atomic.
+    `systemStateDemand()` has to notify under that lock, or an idle sampler can miss the wake-up
+    between its check and its wait. The cost is one uncontended lock per overlay refresh.
+  - **Power source:** a `PowerSource` object lives for the whole stream; `wake()` resets its
+    per-wake state (UPower trusted again, sysfs allowed once more).
+  - **One log line, not in the plan:** the first UPower failure in a stream logs
+    `moonlight-intel: UPower OnBattery unavailable (<reason>), power source from sysfs`.
+    Without it, only an strace would show that the fallback is in use. `docs/arch.md`
+    explains it.
+  - **QtDBus from the `std::thread` works,** so no `QThread` was needed. The harness made
+    blocking calls on the real system bus and on a private bus with no Qt warnings, and
+    timeouts and errors came back as expected.
+- **Finding: renderer recreation mid-stream.**
+  - `FFmpegVideoDecoder`'s destructor logs "Global video stats" through
+    `stringifyVideoStats()`, which calls `appendOverlayStats()`.
+  - At stream end that happens after `sessionEnded()`, so it is harmless, as the plan says.
+  - It also happens whenever `Session` recreates the renderer during a stream: window events
+    that `notifyWindowChanged()` doesn't take, a display change with another refresh rate, or
+    `SDL_RENDER_DEVICE_RESET`. The sampler then wakes for 3 s with the overlay hidden: about 24
+    GT0 / profile reads and 4 UPower calls, but no ACPI evaluation. Goal 2 holds; goal 1 has
+    this exception.
+  - The recreation that every stream logs at start (`Recreating renderer for window event: 1`)
+    doesn't count. It comes before the first frame, and `logVideoStats()` skips a decoder that
+    rendered no frames. Logs from plans 0003 and 0004 have one recreation per stream, always
+    there.
+  - **Possible fix, not done:** call `systemStateDemand()` only while
+    `isOverlayEnabled(Overlay::OverlayDebug)`. `renderstats.cpp` would then include
+    `streaming/session.h`, as `toast.cpp` does. Not done because it changes where the plan puts
+    the call.
+- **Stream end with a hung upowerd:** `stopSystemSampler()` joins the thread, so the main
+  thread in `sessionEnded()` can wait for an in-flight UPower call, up to 250 ms. Before this
+  change it could wait for a battery read, up to about 15 ms. This only happens if upowerd
+  stops answering, and only once per stream.
+- **Builds.**
+  - Arch, in a scratch build directory: clean. The only warnings are upstream's two
+    `lock_queue` / `unlock_queue` deprecations in `plvk.cpp`, which were there before.
+  - Scratch `CONFIG+=disable-libplacebo`: 0 warnings, and no `plvk*` or `qrc_shaders` objects.
+  - Without `HAVE_UPOWER`: `systemstate.cpp` compiled with the Arch build's exact command line
+    minus the define gives 0 warnings and an object with no QtDBus symbols. The harness's
+    `-Wall -Wextra` build without the define is also clean.
+- **Harness (step 4),** scratch, not committed. It runs the real `systemstate.cpp`.
+  - Every `/sys` access is recorded with a timestamp by interposing `fopen`, `open`, `openat`
+    and `opendir` (strace isn't installed on the laptop).
+  - The fake trees are bind-mounted on `/sys` in a user + mount namespace. A nested user
+    namespace maps back to uid 1000, so D-Bus authentication still matches.
+  - UPower is a Python mock on a private bus that can answer battery or AC, fail with an error,
+    return a string, or reply after 1 s.
+  - 178 checks pass:
+
+| Run | Checks | Covers |
+|---|---|---|
+| fake `/sys`, mock UPower | 55 | idle: 0 opens in 2 s; start reads each supply's `type` once. Overlay: 0 power-supply value opens, about 8 GT0 opens a second, `battery, balanced, GT0 1450 MHz` with sysfs saying AC, 5 UPower calls in 4 s. Charger in / out seen after 0.76 / 1.00 s. Demand expiry: reads stop 3.00 s after the last call, idle clears the latest state, a new wake publishes after 5 ms. Benchmark on battery: `power_now` once per tick (11 opens, 11 samples), 9.0 W, `current_now` × `voltage_now` fallback, W gone 1.26 s after the sweep. Benchmark with the overlay hidden: awake for 4.5 s, idle within 300 ms after it. Benchmark on AC: no battery reads. UPower failing mid-wake: `online` read once for the rest of the wake, UPower not asked again, logged once per stream, retried on the next wake. Not a bool and the 250 ms timeout (first sample after 244 ms): `online` read once. Stop while idle joins in 0.2 ms; demand after stop starts nothing |
+| fake `/sys`, bus without UPower | 36 | `online` read exactly once per wake over two wakes, `ServiceUnknown` logged once; an AC change shows only at the next wake; the expiry, benchmark and stop checks as above |
+| fake `/sys`, no system bus | 36 | the same, logged as `Disconnected` |
+| fake `/sys`, built without `HAVE_UPOWER` | 36 | the same, and no UPower log |
+| real `/sys` and system bus (on battery) | 15 | overlay: 0 power-supply value opens, 24 GT0 opens in 3 s, `battery, balanced, GT0 idle`. Benchmark: battery power read on each of 8 ticks (5.9 W), `online` never read. No Qt warnings |
+
+- **Hardware test commands, checked on the laptop before the PR:**
+  - `busctl get-property …` answers `b true` (on battery).
+  - strace isn't installed, so the install line now says `sudo pacman -S --needed strace`.
+  - The trace command was `./app/moonlight` with `X` to replace by hand. It is now a shell
+    function with the absolute binary path, so it works from any directory.
+  - The Collect patterns were run with GNU grep on strace-format lines, including `-f`'s
+    `<unfinished ...>` split. They count the AC and USB `online`, `power_now` and the GT0 files,
+    and ignore `type` and directory opens.
+  - The `bench` grep also prints the `bench start` and `bench done` lines, which are useful
+    context, so the expected text now says which lines carry the watts.
+  - Nothing else in the app or `moonlight-common-c` reads power supplies, so the counts are
+    the fork's alone.
