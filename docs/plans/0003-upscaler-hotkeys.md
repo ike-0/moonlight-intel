@@ -539,8 +539,9 @@ Tooltips:
       benchmark steps don't set it. Covered by the config harness (step 9).
 - [ ] The overlay shows the active scaler, its sharpness, scaler ms, deband ms (when on) and the
       `GPU state` line. Worst-case overlay text ≤ 1024 bytes (value recorded: 955).
-- [ ] The benchmark sweep logs 7 `bench` lines + 7 `bench-summary` lines and restores the prior
-      config. Aborting with T restores it too. (Harness with a fake clock: yes. Stream: tests D, E.)
+- [x] The benchmark sweep logs 7 `bench` lines + 7 `bench-summary` lines and restores the prior
+      config. Aborting with T restores it too. (Stream, test E on battery: 7 + 7 lines, restored
+      bilinear. The abort was checked by the harness only.)
 - [x] Headless table recorded in Execution notes.
 - [x] `app/fork/shaders/README.md` lists source, revision, SHA-256, licence and edits for each
       shader. Vendored headers intact.
@@ -627,13 +628,13 @@ grep -E "moonlight-intel:|Renderer '" /tmp/ml-0003.log
 
 | Scaler | AC video p99 | AC Δp99 | battery video p99 | battery Δp99 | GT0 AC / battery (MHz) | battery W | Visual (foliage/smoke, 1–5) |
 |---|---|---|---|---|---|---|---|
-| bilinear | | 0 | | 0 | | | |
-| spline36 | | | | | | | |
-| lanczos | | | | | | | |
-| ewa_lanczossharp | | | | | | | |
-| fsr1 (s 0.90) | | | | | | | |
-| nis (s 0.25) | | | | | | | |
-| ravu-zoom-ar-r2 | | | | | | | |
+| bilinear | | 0 | 0.46 | 0 | – / 800 | 9.0 | |
+| spline36 | | | 4.25 | +3.79 | – / 1165 | 10.3 | |
+| lanczos | | | 3.79 | +3.33 | – / 1530 | 12.7 | |
+| ewa_lanczossharp | | | 8.24 | +7.78 | – / 1950 | 15.1 | |
+| fsr1 (s 0.90) | | | 3.75 | +3.30 | – / 1204 | 17.0 | |
+| nis (s 0.25) | | | 3.27 | +2.81 | – / 800 | 16.6 | |
+| ravu-zoom-ar-r2 | | | 5.86 | +5.40 | – / 850 | 13.9 | |
 
 **Expected:**
 - Every scaler renders without errors on HDR and SDR.
@@ -742,6 +743,19 @@ connection closed by server (fatal)`.
   (a commit lock shared by the vsync source and plvk's present; 25 s clean in the repro). An
   overload guard was considered and dropped.
 - Workaround until 0004 is merged: frame pacing off (upstream then creates no vsync source).
+
+**Test E, battery sweep (user, 2026-10-26).** Run on the local merge with plan 0004, with
+frame pacing on. All 7 steps measured at least 540 frames (EWA 544, the rest 600–601), so none
+was flagged `lowframes`. The table under Hardware test has the battery columns; the AC sweep
+(test D) is still to do. Two things to keep in mind when reading it:
+- **Nothing meets Δp99 ≤ 2 ms on battery.** The cheapest is NIS at +2.81.
+- **The GT0 clock moves with the load.** It was 800–1950 MHz per step, under the `power_saving`
+  SLPC profile, so a step's time mixes the scaler's cost with the clock the firmware chose.
+  - Lanczos measured faster than Spline36 only because it ran at 1530 MHz versus 1165.
+  - GPU time × clock is closer to the real cost (ms·GHz): bilinear 0.35, nis 2.6, fsr1 3.4,
+    spline36 3.6, lanczos 4.0, ravu 4.9, ewa 14.3. This is approximate, since memory-bound
+    passes don't scale linearly with the clock.
+  - The results PR should compare clocks before comparing scalers. Repeated sweeps help.
 
 **Findings for the results PR.**
 - GT0's SLPC power profile (`tile0/gt0/freq0/power_profile`) was `[power_saving]` on battery and
