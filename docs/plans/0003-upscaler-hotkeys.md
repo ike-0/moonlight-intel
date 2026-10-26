@@ -633,13 +633,13 @@ grep -E "moonlight-intel:|Renderer '" /tmp/ml-0003.log
 
 | Scaler | AC video p99 | AC Δp99 | battery video p99 | battery Δp99 | GT0 AC / battery (MHz) | battery W | Visual (foliage/smoke, 1–5) |
 |---|---|---|---|---|---|---|---|
-| bilinear | | 0 | 0.46 | 0 | – / 800 | 9.0 | |
-| spline36 | | | 4.25 | +3.79 | – / 1165 | 10.3 | |
-| lanczos | | | 3.79 | +3.33 | – / 1530 | 12.7 | |
-| ewa_lanczossharp | | | 8.24 | +7.78 | – / 1950 | 15.1 | |
-| fsr1 (s 0.90) | | | 3.75 | +3.30 | – / 1204 | 17.0 | |
-| nis (s 0.25) | | | 3.27 | +2.81 | – / 800 | 16.6 | |
-| ravu-zoom-ar-r2 | | | 5.86 | +5.40 | – / 850 | 13.9 | |
+| bilinear | 0.53 | 0 | 0.46 | 0 | 800 / 800 | 9.0 | reference |
+| spline36 | 4.23 | +3.70 | 4.25 | +3.79 | 1107 / 1165 | 10.3 | 2nd best |
+| lanczos | 4.21 | +3.68 | 3.79 | +3.33 | 1003 / 1530 | 12.7 | minor gain for the cost |
+| ewa_lanczossharp | 8.19 | +7.66 | 8.24 | +7.78 | 1950 / 1950 | 15.1 | minor gain for the cost |
+| fsr1 (s 0.90) | 3.41 | +2.89 | 3.75 | +3.30 | 1345 / 1204 | 17.0 | best overall, at s0.70 |
+| nis (s 0.25) | 3.28 | +2.75 | 3.27 | +2.81 | 800 / 800 | 16.6 | best at s0.00, still some ringing |
+| ravu-zoom-ar-r2 | 5.98 | +5.45 | 5.86 | +5.40 | 1215 / 850 | 13.9 | natural (first check) |
 
 **Expected:**
 - Every scaler renders without errors on HDR and SDR.
@@ -827,12 +827,33 @@ the local range of the bilinear crop (7×7) next to an edge.
   1920×1200; metrics are on luma only (the hooks scale luma, chroma is bilinear); games may
   rank differently.
 
+**Test D, AC sweep (user, 2026-10-26).** Run on the local merge with plan 0004, with frame
+pacing on, after deviation 10's revert. 7 + 7 lines, config restored, no disconnect. All steps
+at least 540 frames (EWA 574). The AC columns are in the results table.
+- **AC barely differs from battery here:** bilinear 0.47 vs 0.44 ms avg, and GT0 again
+  800–1950 MHz per step. 0002's AC/battery gap did not show up in these runs.
+- **GPU time × clock (ms·GHz) is consistent between the two sweeps:** bilinear 0.38 / 0.35,
+  nis 2.5 / 2.6, fsr1 3.3 / 3.4, spline36 3.6 / 3.6, lanczos 3.8 / 4.0, ravu 5.1 / 4.9,
+  ewa 13.2 / 14.3. So it is a usable cost measure despite the clock swings.
+- **No scaler meets Δp99 ≤ 2 ms on AC either.** Closest are NIS (+2.75) and FSR 1 at s0.90
+  (+2.89; +1.98 ms avg).
+
+**User ranking after the anti-ringing change (tests A / A2, 2026-10-26).**
+1. **FSR 1 at sharpness 0.70.** In the PQ-space metric, s0.70 has 5.5–9.6 % halo pixels against
+   16.7–18.5 % at the default 0.90.
+2. **Spline36.**
+3. **NIS** at sharpness 0.00 was the best of its range, still with some ringing.
+4. **Lanczos and EWA Lanczos Sharp** cost a lot for a minor improvement.
+
 **Findings for the results PR.**
 - GT0's SLPC power profile (`tile0/gt0/freq0/power_profile`) was `[power_saving]` on battery and
   `[base]` after the charger was connected, during this session. It likely explains much of the
   AC/battery GPU-time gap from 0002. On request it is not logged by this plan.
 - FSR's PQ mode on fine HDR detail (above): worth an A/B look before choosing FSR as the
   default.
+- **Candidate defaults from the user's ranking:** FSR 1 with sharpness 0.70. That is outside the
+  2 ms budget (about +2.9 ms p99 at s0.90 on both power sources), so the results PR has to accept
+  that, or revisit the budget.
 
 **Harnesses (step 9),** scratch, against the real sources:
 - logic, 124 checks: hotkey matching on QWERTY / Dvorak / AZERTY / Cyrillic through
