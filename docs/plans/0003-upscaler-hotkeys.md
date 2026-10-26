@@ -562,6 +562,9 @@ mkdir -p build && cd build && qmake6 ../moonlight-qt.pro && make -j"$(nproc)" re
 
 **Stream settings:**
 - 1920×1200, 120 fps, AV1, HDR on, V-Sync on, frame pacing on, fullscreen.
+- **Until plan 0004 is merged, turn frame pacing off** for tests A–E and H. With it on, a
+  Wayland commit race in upstream's frame pacing disconnects the stream within seconds once
+  the GPU is busy (EWA, RAVU; see Execution notes).
 - Moving content (scrolling UFO test), plus a game scene with foliage or smoke for the visual
   checks.
 - Host in HDR.
@@ -718,6 +721,27 @@ disabled hooks), and the best match against bilinear was at offset 0,0, so no im
   measurement**. Headless, every non-bilinear scaler misses Δp99 ≤ 2 ms.
 - GT0 `act_freq` sampled at 4 Hz while rendering at 120 Hz: 47 % of samples read 0 (RC6
   between frames).
+
+**First hardware results (user, battery, 2026-10-26).** Spline36, Lanczos, FSR 1 and NIS
+rendered; RAVU (pass 6.8–7.1 ms, video p99 8.22 ms of 8.33) and EWA Lanczos Sharp (video p99
+8.25 ms) stuttered, and both times the stream died about 5 s later with `Wayland display
+connection closed by server (fatal)`.
+- Not a GPU fault: the kernel log is clean. GNOME logged `error in client communication`.
+- A standalone repro of plvk's setup (fullscreen SDL window, libplacebo FIFO swapchain of depth
+  1, HDR10, EWA at 120 Hz) gave the cause:
+  - Without upstream's `WaylandVsyncSource` it ran for 25 s.
+  - With it, it died within 1–3 s at any load: `wp_linux_drm_syncobj_surface_v1` error 3,
+    "Release or Acquire point set but no buffer attached".
+  - The vsync source's `wl_surface_commit()` (main thread) lands between Mesa's
+    `set_acquire_point` / `set_release_point` and its `attach` (render thread, inside
+    `vkQueuePresentKHR`).
+- Mesa 26 uses explicit sync with Mutter 51, which makes that interleaving fatal. In real
+  streams the render thread mostly presents after the vsync source's commit; heavy GPU work
+  lines both up on the same vblank, so the race hits within seconds.
+- This is an upstream bug in frame pacing, not in this plan's code, so the fix is plan 0004
+  (a commit lock shared by the vsync source and plvk's present; 25 s clean in the repro). An
+  overload guard was considered and dropped.
+- Workaround until 0004 is merged: frame pacing off (upstream then creates no vsync source).
 
 **Findings for the results PR.**
 - GT0's SLPC power profile (`tile0/gt0/freq0/power_profile`) was `[power_saving]` on battery and
