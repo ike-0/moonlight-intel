@@ -177,11 +177,11 @@ No upstream file is touched.
 - [x] No upstream file changed. `git diff --stat origin/intel... -- ':!app/fork' ':!docs'`
       lists only `app/app.pro`, with the change inside the fork block.
 - [x] Harness checks of step 4 pass.
-- [ ] Hardware A: on battery, overlay never shown, 60 s: 0 power-supply value reads and 0 GT0
+- [x] Hardware A: on battery, overlay never shown, 60 s: 0 power-supply value reads and 0 GT0
       reads.
-- [ ] Hardware B: overlay shown: 0 power-supply value reads, GT0 reads > 0. `GPU state` has no
-      W and follows the charger within 2 s.
-- [ ] Hardware C (changed with the user after review, see Execution notes): sweep on battery:
+- [x] Hardware B: overlay shown: 0 power-supply value reads, GT0 reads > 0. `GPU state` has no
+      W and follows the charger within 2 s. (The user saw it follow the charger; not timed.)
+- [x] Hardware C (changed with the user after review, see Execution notes): sweep on battery:
       0 power-supply value reads; the 7 `bench N/7` lines carry `power=battery`, the profile,
       GT0 and throttle reasons, and no `battery=` field.
 - [ ] Hardware D: 5 min on battery with the overlay hidden: no periodic hitch.
@@ -348,3 +348,23 @@ grep -E 'moonlight-intel: bench ' /tmp/ml-0005-c.log
     context, so the expected text now names the `bench N/7` lines.
   - Nothing else in the app or `moonlight-common-c` reads power supplies, so the counts are
     the fork's alone.
+
+**Hardware test, first run (user, 2026-10-26, on battery, static host image).**
+
+| Test | power | gt0 | Other |
+|---|---|---|---|
+| A | 0 | 0 | — |
+| B | 0 | 244 | `GPU state` switched to `AC` when the charger was plugged in and back after unplugging |
+| C | 0 | 398 | 7 `bench N/7` lines with `power=battery profile=balanced`, GT0 800–1532 MHz, `throttle=none`, no `battery=` |
+
+- **The traces are sound.** Each has 4 power-supply `type` reads (the sampler start, one per
+  supply). In B and C, `gt0` is exactly twice the `platform_profile` count (122 and 199
+  samples). No run logged `UPower OnBattery unavailable`.
+- **A's trace** followed 279 threads and processes. After the start it has no profile, GT0 or
+  power-supply value reads.
+- **The host image was static,** so the host sent frames only when the picture changed. The
+  overlay refreshes only when a frame arrives, so in B the sampler was awake for about 30 s of
+  the 60 s and idled in between, as designed.
+- **In C,** 6 of 7 steps were flagged `lowframes` (82–596 frames). That doesn't affect this
+  test, which checks the fields, but these GPU times aren't comparable with other sweeps.
+- **Still open:** D (5 min on battery with the overlay hidden, moving content).
