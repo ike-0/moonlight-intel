@@ -114,7 +114,6 @@ static struct
     uint32_t measureTicks;
     std::vector<uint64_t> videoNs;
     uint64_t scalerNs;
-    uint64_t debandNs;
     BenchResult results[kScalerCount];
 } s_Bench;
 
@@ -170,7 +169,6 @@ static void beginBenchStep(int step, char* toast, size_t length)
     s_Bench.measuring = false;
     s_Bench.videoNs.clear();
     s_Bench.scalerNs = 0;
-    s_Bench.debandNs = 0;
 
     snprintf(toast, length, "Benchmark %d/%d: %s\n(keep content moving)",
              step + 1, kScalerCount, scalerName(scaler));
@@ -271,7 +269,7 @@ static void finishBenchStep(char* toast, size_t length)
     }
 }
 
-bool benchRecordFrame(uint64_t generation, uint64_t videoNs, uint64_t scalerNs, uint64_t debandNs)
+bool benchRecordFrame(uint64_t generation, uint64_t videoNs, uint64_t scalerNs)
 {
     char toast[128] = "";
     bool firstMeasured = false;
@@ -301,7 +299,6 @@ bool benchRecordFrame(uint64_t generation, uint64_t videoNs, uint64_t scalerNs, 
 
         s_Bench.videoNs.push_back(videoNs);
         s_Bench.scalerNs += scalerNs;
-        s_Bench.debandNs += debandNs;
 
         if (now - s_Bench.measureTicks >= k_BenchMeasureMs) {
             finishBenchStep(toast, sizeof(toast));

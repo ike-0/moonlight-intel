@@ -1539,7 +1539,7 @@ void PlVkRenderer::recordRenderStats(const pl_frame* source, const pl_frame* tar
         if (m_GpuTimeLogEnabled) {
             m_GpuTimeSamplesNs.push_back(m_GpuTimeFrameNs);
         }
-        if (m_ForkScaler.recordFrame(m_GpuTimeFrameNs, m_GpuScalingFrameNs, m_GpuDebandFrameNs)) {
+        if (m_ForkScaler.recordFrame(m_GpuTimeFrameNs, m_GpuScalingFrameNs)) {
             logGpuPasses();
         }
     }

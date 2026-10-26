@@ -38,7 +38,7 @@ public:
 
     // After each pl_render_image() that has GPU timer data. Feeds a running benchmark; returns
     // true when the renderer should log this frame's pass list.
-    bool recordFrame(uint64_t videoNs, uint64_t scalerNs, uint64_t debandNs);
+    bool recordFrame(uint64_t videoNs, uint64_t scalerNs);
     bool benchActive() const { return m_Config.benchStep > 0; }
 
     // The config on screen, and its overlay name: "fsr1 s0.90", "nis failed -> bilinear"

@@ -288,9 +288,9 @@ bool PlvkScaler::isDebandPass(pl_shader_info shader)
     return hasStep(shader, "debanding");
 }
 
-bool PlvkScaler::recordFrame(uint64_t videoNs, uint64_t scalerNs, uint64_t debandNs)
+bool PlvkScaler::recordFrame(uint64_t videoNs, uint64_t scalerNs)
 {
-    return benchActive() && benchRecordFrame(m_Config.generation, videoNs, scalerNs, debandNs);
+    return benchActive() && benchRecordFrame(m_Config.generation, videoNs, scalerNs);
 }
 
 void PlvkScaler::describe(char* text, size_t length) const

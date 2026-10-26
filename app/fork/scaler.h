@@ -59,8 +59,8 @@ void scalerRendererDetached(const void* renderer);
 
 // Benchmark feed (render thread): one call per frame that has GPU timer data, tagged with the
 // config generation the frame was rendered with. Returns true for the first measured frame of a
-// step, so the renderer can log that frame's pass list.
-bool benchRecordFrame(uint64_t generation, uint64_t videoNs, uint64_t scalerNs, uint64_t debandNs);
+// step, so the renderer can log that frame's pass list. The sweep runs without debanding.
+bool benchRecordFrame(uint64_t generation, uint64_t videoNs, uint64_t scalerNs);
 
 // Session hooks (fork.cpp). Each stream starts from the settings passed in, which are also what
 // the session marker compares against.
