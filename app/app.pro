@@ -269,6 +269,8 @@ linux:qtHaveModule(dbus) {
     HEADERS += fork/gnomedisplayconfig.h
 }
 libplacebo {
+    SOURCES += fork/plvkscaler.cpp
+    HEADERS += fork/plvkscaler.h
     RESOURCES += fork/shaders/shaders.qrc
 }
 
