@@ -124,7 +124,10 @@ static void appendScalingLine(char* output, int length, int* offset, const Rende
         snprintf(step, sizeof(step), "downscale (x%.2f)", ratio);
     }
     else {
-        snprintf(step, sizeof(step), "(x%.2f), %s%s", ratio, stats.scaler, stats.session ? " (session)" : "");
+        // The marker belongs to the chosen scaler, so it is hidden while another one is on
+        // screen (A/B bypass, a benchmark step)
+        bool session = stats.session && !stats.bypass && stats.benchStep == 0;
+        snprintf(step, sizeof(step), "(x%.2f), %s%s", ratio, stats.scaler, session ? " (session)" : "");
     }
 
     char scalingTime[24] = "";
