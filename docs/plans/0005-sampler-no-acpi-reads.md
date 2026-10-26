@@ -5,7 +5,7 @@
 | Status | In review |
 | Created | 2026-10-26 |
 | Branch | `claude/0005-sampler-no-acpi-reads` |
-| PR | — |
+| PR | ike-0/moonlight-intel PR 7 |
 
 ## Goal
 
