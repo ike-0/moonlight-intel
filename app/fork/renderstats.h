@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 namespace Fork
 {
@@ -15,12 +16,17 @@ struct RenderStatsSnapshot
     int gpuSamples;
     double gpuAvgMs, gpuP99Ms, gpuMaxMs;
 
-    // Average GPU time per frame of scaler passes; 0 while scaling is plain texture sampling
+    // Average GPU time per frame of scaler passes (0 while scaling is plain texture sampling)
+    // and of debanding passes. Both are part of the video time, not on top of it.
     double scalingAvgMs;
+    double debandAvgMs;
 
     int sourceWidth, sourceHeight;  // source crop
     int targetWidth, targetHeight;  // video rect on the swapchain, after aspect-ratio fitting
-    char scaler[32];
+    char scaler[40];                // name and parameters, e.g. "fsr1 s0.90", "nis failed -> bilinear"
+    bool session;                   // scaler or sharpness differs from the saved settings
+    bool bypass;                    // A/B bypass to bilinear
+    int benchStep, benchTotal;      // running benchmark step, 0 = none
 
     int swapchainWidth, swapchainHeight;
     char swapchainTransfer[16];
@@ -47,5 +53,8 @@ public:
 
 // Copies the latest snapshot if one was published in the last maxAgeMs. Thread-safe.
 bool latestRenderStats(RenderStatsSnapshot* snapshot, uint32_t maxAgeMs = 3000);
+
+// Average, p99 and max in ms of GPU times in ns. Reorders the samples, which must not be empty.
+void summarizeGpuTimes(std::vector<uint64_t>& samplesNs, double* avgMs, double* p99Ms, double* maxMs);
 
 }

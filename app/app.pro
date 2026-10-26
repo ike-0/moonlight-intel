@@ -249,13 +249,19 @@ SOURCES += \
     fork/fork.cpp \
     fork/intelpreferences.cpp \
     fork/renderstats.cpp \
-    fork/desktophdr.cpp
+    fork/desktophdr.cpp \
+    fork/scaler.cpp \
+    fork/systemstate.cpp \
+    fork/toast.cpp
 HEADERS += \
     fork/fork.h \
     fork/intelpreferences.h \
     fork/renderstats.h \
     fork/desktophdr.h \
-    fork/desktophdrbackend.h
+    fork/desktophdrbackend.h \
+    fork/scaler.h \
+    fork/systemstate.h \
+    fork/toast.h
 linux:qtHaveModule(dbus) {
     QT += dbus
     DEFINES += HAVE_GNOME_DISPLAY_CONFIG

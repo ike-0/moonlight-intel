@@ -1,6 +1,9 @@
 #include "fork.h"
 #include "desktophdr.h"
 #include "intelpreferences.h"
+#include "scaler.h"
+#include "systemstate.h"
+#include "toast.h"
 
 #include <QCoreApplication>
 #include <QQmlEngine>
@@ -58,7 +61,18 @@ bool logGpuTiming()
 
 void sessionStarted(SDL_Window* window)
 {
-    DesktopHdrController::get()->sessionStarted(IntelPreferences::get()->desktopHdrMode(),
+    IntelPreferences* preferences = IntelPreferences::get();
+
+    toastSessionStarted();
+    startSystemSampler();
+
+    // Sharpness is held in hundredths from here on, so comparisons are exact
+    scalerSessionStarted(preferences->upscaler(),
+                         qRound(preferences->fsrSharpness() * 100),
+                         qRound(preferences->nisSharpness() * 100),
+                         preferences->debanding());
+
+    DesktopHdrController::get()->sessionStarted(preferences->desktopHdrMode(),
                                                 isFullscreen(window), isFocused(window),
                                                 displayName(window));
 }
@@ -76,7 +90,15 @@ void notifyWindowState(SDL_Window* window)
 
 void sessionEnded()
 {
+    scalerSessionEnded();
+    toastSessionEnded();
+    stopSystemSampler();
     DesktopHdrController::get()->sessionEnded();
+}
+
+bool handleStreamHotkey(int sym, int scancode)
+{
+    return scalerHandleHotkey(sym, scancode);
 }
 
 }
