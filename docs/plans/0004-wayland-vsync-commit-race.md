@@ -119,7 +119,8 @@ wl_display#1.error(wp_linux_drm_syncobj_surface_v1#57, 3, "Release or Acquire po
 - [x] Repro: with the lock, 25 s at full load with no protocol error; without it, an error
       within seconds (table above).
 - [ ] Hardware: frame pacing **on**, HDR, EWA Lanczos Sharp on battery for 60 s with the UFO
-      test scrolling: no disconnect.
+      test scrolling: no disconnect. (2026-10-26: all scalers cycled with no disconnect, but EWA
+      ran 15 s and RAVU 9 s, not 60 s each; test B pending. See Execution notes.)
 - [x] `docs/FORK.md` updated.
 
 ## Hardware test (user runs on the laptop)
@@ -192,3 +193,26 @@ journalctl --user -b --since "-30min" | grep -c "error in client communication"
   conflicts because both branches add rows after D5. Whichever PR merges second needs `intel`
   merged in, keeping all of D6, D7 and D8. The hardware test's local merge uses `-X ours`,
   which only touches that file; its `grep` checks that the guard lines are in.
+
+**Hardware test, first run (user, 2026-10-26, battery, local merge with plan 0003).**
+- **Setup:** frame pacing on (`Frame pacing: target 120 Hz with 120 FPS stream`, no "Vsync
+  source failed"), V-Sync on, HDR stream (`pq=1`, HDR swapchain), Vulkan with the VAAPI backend,
+  all on battery.
+- **Result:** the user cycled bilinear → spline36 → lanczos → EWA Lanczos Sharp → FSR 1 → NIS →
+  RAVU → bilinear over about 2.5 min. No `connection closed` in the log, and no `error in client
+  communication` in GNOME's journal after 10:10, the last unlocked repro run.
+
+| Scaler | Held | Video GPU avg / p99 (ms) | Frames per 5 s |
+|---|---|---|---|
+| bilinear | 68 s | 0.27–0.48 / 0.45–0.54 | 594–599 |
+| spline36 | 13 s | 2.76–4.09 / 3.79–4.21 | 595–600 |
+| ewa_lanczossharp | 15 s | 8.03–8.16 / 8.39–8.42 | 499–505 |
+| fsr1 | 17 s | 2.30–3.73 / 3.27–3.81 | 595–596 |
+| nis | 16 s | 2.64–3.20 / 4.63–5.17 | 593–598 |
+| ravu-zoom-ar-r2 | 9 s | 4.20 / 8.16 | 570 |
+
+- **Interpretation:** before the fix, EWA at this load (8.0–8.2 ms per 8.33 ms frame, about
+  100 fps) disconnected 8 s after switching, and the repro within 2 s. It now ran 15 s.
+- **Still open:**
+  - the planned 60 s holds;
+  - test B, the benchmark sweep on battery. It also covers plan 0003's test E.
