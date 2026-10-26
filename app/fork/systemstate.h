@@ -8,8 +8,9 @@ namespace Fork
 {
 
 // moonlight-intel: power and GPU state for the stats overlay's "GPU state" line and the
-// benchmark log. A sampler thread reads sysfs at 4 Hz while a stream runs. A missing file reads
-// as n/a; nothing here fails.
+// benchmark log. A sampler thread runs during a stream but only reads while the overlay is shown
+// or a benchmark runs, and never evaluates ACPI outside a benchmark. A missing file reads as n/a;
+// nothing here fails.
 struct SystemState
 {
     int samples;          // 0 = no data
@@ -21,7 +22,7 @@ struct SystemState
     char throttle[96];    // union of GT0 throttle reasons: "none", e.g. "pl1 thermal", or "n/a"
 };
 
-// "AC, balanced, GT0 1450 MHz" or "battery 8.4 W, low-power, GT0 1100 MHz"
+// "AC, balanced, GT0 1450 MHz", or in a benchmark "battery 8.4 W, low-power, GT0 1100 MHz"
 void formatSystemState(const SystemState& state, char* text, size_t length);
 
 // One sysfs reading. The root is a parameter so the readers can run against a fake tree.
@@ -41,7 +42,13 @@ public:
     // Finds the power supplies and the xe GT0 once
     explicit SystemStateReader(const std::string& sysRoot = "/sys");
 
-    Sample read() const;
+    // AC or battery from the Mains supplies' online files. The ACPI AC driver evaluates _PSR on
+    // every read, so this is only the fallback for UPower.
+    bool readOnAc() const;
+
+    // One sample on the given power source. Battery power goes through ACPI (_BST), so it is
+    // only read with batteryPower set, and only on battery.
+    Sample read(bool onAc, bool batteryPower) const;
 
 private:
     std::string m_SysRoot;
@@ -50,11 +57,20 @@ private:
     std::string m_Gt0FreqDir;              // .../device/tile0/gt0/freq0 of the xe card, or empty
 };
 
-// Sampler lifetime: one stream (fork.cpp)
+// Sampler lifetime: one stream (fork.cpp). It starts idle and reads nothing until one of the
+// two calls below wakes it.
 void startSystemSampler();
 void stopSystemSampler();
 
-// The last completed second. False before the first second or without a running sampler.
+// The overlay is being built (renderstats.cpp): sample for the next 3 s. Never starts a stopped
+// sampler.
+void systemStateDemand();
+
+// A benchmark sweep runs (scaler.cpp): sample with the overlay hidden too, and read battery power
+void setSystemStateBenchmark(bool running);
+
+// The last completed second. False before the first second, while idle or without a running
+// sampler.
 bool latestSystemState(SystemState* state);
 
 // Benchmark measure window: begin, then read everything sampled since
