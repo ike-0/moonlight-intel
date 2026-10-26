@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Ready |
+| Status | In progress |
 | Created | 2026-10-25 |
 | Branch | `claude/0003-upscaler-hotkeys` |
 | PR | — |
