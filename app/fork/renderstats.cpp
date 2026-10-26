@@ -186,11 +186,13 @@ int appendOverlayStats(char* output, int length, int streamFps)
     // The desktop-HDR state is shown whichever renderer is active
     QByteArray desktopHdr = DesktopHdrController::statusText().toLatin1();
     if (haveStats) {
-        appendLine(output, length, &offset, "Output: %dx%d %s %s%s%s\n",
-                   stats.swapchainWidth, stats.swapchainHeight,
-                   stats.swapchainTransfer, stats.swapchainPrimaries,
-                   desktopHdr.isEmpty() ? "" : ", desktop HDR: ",
-                   desktopHdr.constData());
+        char line[192];
+        snprintf(line, sizeof(line), "Output: %dx%d %s %s%s%s",
+                 stats.swapchainWidth, stats.swapchainHeight,
+                 stats.swapchainTransfer, stats.swapchainPrimaries,
+                 desktopHdr.isEmpty() ? "" : ", desktop HDR: ",
+                 desktopHdr.constData());
+        appendWrappedLine(output, length, &offset, line);
     }
     else if (!desktopHdr.isEmpty()) {
         appendLine(output, length, &offset, "Desktop HDR: %s\n", desktopHdr.constData());
