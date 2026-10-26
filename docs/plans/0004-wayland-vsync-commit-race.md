@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | In progress |
+| Status | In review |
 | Created | 2026-10-26 |
 | Branch | `claude/0004-wayland-vsync-commit-race` |
 | PR | — |
@@ -112,15 +112,15 @@ wl_display#1.error(wp_linux_drm_syncobj_surface_v1#57, 3, "Release or Acquire po
 
 ## Acceptance criteria
 
-- [ ] Builds cleanly on Arch and with `CONFIG+=disable-libplacebo`.
-- [ ] No new warnings in touched files.
-- [ ] Upstream files touched only by marked lines: `waylandvsyncsource.cpp` 3 (include + 2),
+- [x] Builds cleanly on Arch and with `CONFIG+=disable-libplacebo`.
+- [x] No new warnings in touched files.
+- [x] Upstream files touched only by marked lines: `waylandvsyncsource.cpp` 3 (include + 2),
       `plvk.cpp` 2.
 - [x] Repro: with the lock, 25 s at full load with no protocol error; without it, an error
       within seconds (table above).
 - [ ] Hardware: frame pacing **on**, HDR, EWA Lanczos Sharp on battery for 60 s with the UFO
       test scrolling: no disconnect.
-- [ ] `docs/FORK.md` updated.
+- [x] `docs/FORK.md` updated.
 
 ## Hardware test (user runs on the laptop)
 
@@ -131,7 +131,10 @@ which is needed to load the GPU. The test branch isn't pushed; delete it afterwa
 cd ~/repos/moonlight-intel
 git fetch origin
 git switch -c test/0003-0004 origin/claude/0003-upscaler-hotkeys
-git merge --no-edit origin/claude/0004-wayland-vsync-commit-race
+# Both branches add a row to docs/FORK.md, the only conflict; -X ours keeps 0003's copy of it
+git merge -X ours --no-edit origin/claude/0004-wayland-vsync-commit-race
+# Expect 2 and 2: the commit lock is in both files
+grep -c "SurfaceCommitLock commitLock" app/streaming/video/ffmpeg-renderers/plvk.cpp app/streaming/video/ffmpeg-renderers/pacer/waylandvsyncsource.cpp
 git submodule update --init --recursive
 mkdir -p build && cd build && qmake6 ../moonlight-qt.pro && make -j"$(nproc)" release
 ~/repos/moonlight-intel/build/app/moonlight 2>&1 | tee /tmp/ml-0004.log
@@ -170,4 +173,22 @@ journalctl --user -b --since "-30min" | grep -c "error in client communication"
 
 ## Execution notes
 
-Filled in by the executing session: deviations from the plan, findings, follow-ups.
+- **As designed.** One placement change: `SurfaceCommitLock` is declared right after
+  `initialize()` in `fork.h`. Next to `logGpuTiming()` it conflicted with plan 0003's rewrite
+  of the following comment.
+- **Builds.**
+  - Arch: clean. The only warnings are upstream's two `lock_queue` / `unlock_queue`
+    deprecations in `plvk.cpp`, which were there before.
+  - Scratch `CONFIG+=disable-libplacebo`: 0 warnings.
+  - `waylandvsyncsource.o` references `Fork::SurfaceCommitLock`, so the guard is compiled in
+    (`HAS_WAYLAND`).
+  - The hardware test's local merge with plan 0003's branch (`-X ours`) builds, with no new
+    warnings.
+- **Repro** (scratch, not committed; same setup as Context, on battery, desktop in HDR):
+  - the four runs in the Context table;
+  - lock cost over 15 s of EWA: held at most 0.50 ms; main-thread wait at most 0.37 ms, average
+    0.002 ms.
+- **Merging with plan 0003.** `fork.h`, `fork.cpp` and `plvk.cpp` merge cleanly. `docs/FORK.md`
+  conflicts because both branches add rows after D5. Whichever PR merges second needs `intel`
+  merged in, keeping all of D6, D7 and D8. The hardware test's local merge uses `-X ours`,
+  which only touches that file; its `grep` checks that the guard lines are in.
