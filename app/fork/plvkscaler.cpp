@@ -21,22 +21,36 @@ struct HookInfo
     const char* pqParam;         // 1 for a PQ-encoded source
 };
 
+// NIS gets no PQ parameter: its NIS_HDR_MODE oversharpened PQ content at every sharpness in
+// plan 0003's visual check, so it stays at the shader's default 0 (SDR mode) for all sources
 static const HookInfo k_Hooks[] = {
     { IntelPreferences::SC_FSR1, ":/fork/shaders/FSR.glsl", "SHARPNESS", "FSR_PQ" },
-    { IntelPreferences::SC_NIS, ":/fork/shaders/NVScaler.glsl", "NIS_SHARPNESS_PCT", "NIS_HDR_MODE" },
+    { IntelPreferences::SC_NIS, ":/fork/shaders/NVScaler.glsl", "NIS_SHARPNESS_PCT", nullptr },
     { IntelPreferences::SC_RAVU_ZOOM_AR_R2, ":/fork/shaders/ravu-zoom-ar-r2.hook", nullptr, nullptr },
 };
+
+// Anti-ringing at 0.8 cut the halos of libplacebo's sharp filters 3-6x, at about the same
+// closeness to native (plan 0003's visual check)
+static pl_filter_config withAntiring(pl_filter_config filter)
+{
+    filter.antiring = 0.8f;
+    return filter;
+}
 
 // libplacebo's own filters; nullptr for bilinear (plain texture sampling) and the hooks
 static const pl_filter_config* builtinFilter(ScalerId id)
 {
+    static const pl_filter_config spline36 = withAntiring(pl_filter_spline36);
+    static const pl_filter_config lanczos = withAntiring(pl_filter_lanczos);
+    static const pl_filter_config ewaLanczosSharp = withAntiring(pl_filter_ewa_lanczossharp);
+
     switch (id) {
     case IntelPreferences::SC_SPLINE36:
-        return &pl_filter_spline36;
+        return &spline36;
     case IntelPreferences::SC_LANCZOS:
-        return &pl_filter_lanczos;
+        return &lanczos;
     case IntelPreferences::SC_EWA_LANCZOSSHARP:
-        return &pl_filter_ewa_lanczossharp;
+        return &ewaLanczosSharp;
     default:
         return nullptr;
     }

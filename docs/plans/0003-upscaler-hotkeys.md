@@ -583,6 +583,9 @@ mkdir -p build && cd build && qmake6 ../moonlight-qt.pro && make -j"$(nproc)" re
     its PQ mode moved such detail by up to 2 % of the code range, while smooth areas matched
     bilinear.
   - Fill in the subjective table below on the game scene.
+- **A2. Visual recheck after deviation 10:** capture the same crop as before for NIS (at 0.25 and
+  at 0.00) and for Lanczos / EWA. Compare: NIS's halos and the Lanczos family's ringing should
+  be clearly smaller than in the first captures.
 - **B. A/B:** on FSR 1, press B repeatedly. It toggles bilinear ↔ FSR 1 instantly, with no
   hitch after the first time.
 - **C. Sharpness:**
@@ -790,8 +793,13 @@ the local range of the bilinear crop (7×7) next to an edge.
     - With `FSR_PQ` forced to 0 it is sharper but rings much more (s0.90: 19–22 %). So its PQ mode
       is what makes it look clean.
   - **Spline36 / Lanczos / EWA** carry 6–8 % halo pixels. libplacebo's
-    `pl_filter_config.antiring = 0.8` cuts that to 1–2.6 % at about the same SSIM. Anti-ringing
-    is out of scope for this plan (see Scope); it's a candidate follow-up.
+    `pl_filter_config.antiring = 0.8` cuts that to 1–2.6 % at about the same SSIM.
+- **Decided with the user afterwards** (Deviation 10): NIS runs in its SDR mode for every
+  source, and the three libplacebo filters use `antiring = 0.8`.
+  - The image harness confirmed the shipped code gives exactly the measured rows: `nis` on PQ =
+    `nis-…-hdr0`, `lanczos` = `lanczos-ar0.8`.
+  - A headless A/B (on AC) found no measurable GPU cost for anti-ringing: on and off alternated
+    within the clock noise.
 - **Caveats:** the source is a downscaled SDR screenshot of text, not a host render at
   1920×1200; metrics are on luma only (the hooks scale luma, chroma is bilinear); games may
   rank differently.
@@ -866,3 +874,8 @@ deprecation warnings in `plvk.cpp`, which were there before. The scratch
    - A machine with no battery counts as AC.
 9. **Shared helper.** `summarizeGpuTimes()` moved from `plvk.cpp` to `renderstats` for the
    benchmark; `plvk.cpp` lost the fork's `<algorithm>` include with it.
+10. **After the visual check** (decided with the user):
+    - NIS never gets `NIS_HDR_MODE` = 1. The plan said to write it per frame from the source's
+      PQ flag, but its HDR constants oversharpened PQ content even at sharpness 0.
+    - Spline36, Lanczos and EWA get a fixed `antiring = 0.8`. Scope excluded an anti-ringing
+      *slider*; there is still none.
