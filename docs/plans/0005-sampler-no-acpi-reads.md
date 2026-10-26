@@ -181,8 +181,9 @@ No upstream file is touched.
       reads.
 - [ ] Hardware B: overlay shown: 0 power-supply value reads, GT0 reads > 0. `GPU state` has no
       W and follows the charger within 2 s.
-- [ ] Hardware C: sweep on battery: the `bench` lines carry `battery=… W`. The W leaves the
-      `GPU state` line after `Benchmark done`.
+- [ ] Hardware C (changed with the user after review, see Execution notes): sweep on battery:
+      0 power-supply value reads; the 7 `bench N/7` lines carry `power=battery`, the profile,
+      GT0 and throttle reasons, and no `battery=` field.
 - [ ] Hardware D: 5 min on battery with the overlay hidden: no periodic hitch.
 - [x] `docs/FORK.md` and `docs/arch.md` updated.
 
@@ -217,8 +218,8 @@ ml0005 a    # test A; then "ml0005 b" for B and "ml0005 c" for C
 - **A.** Stream for 60 s without opening the stats overlay, then quit.
 - **B.** Stream with the overlay (Ctrl+Alt+Shift+S) open for 60 s, watching the `GPU state` line.
   While it is open, plug the charger in, wait 10 s, then unplug. Quit.
-- **C.** Stream with the overlay open, on battery. Press Ctrl+Alt+Shift+T and wait for
-  `Benchmark done`. Watch the `GPU state` line for 10 s more, then quit.
+- **C.** Stream with the overlay open, on battery. Press Ctrl+Alt+Shift+T, wait for
+  `Benchmark done`, then quit.
 - **D.** Launch the usual way (normal power profile), on battery, overlay hidden, 5 min of
   scrolling content or a game. If unsure, compare against the `intel` build.
 
@@ -239,7 +240,7 @@ grep -E 'moonlight-intel: bench ' /tmp/ml-0005-c.log
 |---|---|---|---|
 | A | 0 | 0 | — |
 | B | 0 | > 0 (about 8 per second while shown) | `GPU state: battery, …` without W; `AC` within 2 s of plugging in, `battery` again after unplugging |
-| C | > 0: `power_now`, during the sweep only | > 0 | W on the line during the sweep, gone after `Benchmark done`; the 7 `bench N/7` lines carry `battery=… W` (the grep also shows the `bench start` and `bench done` lines) |
+| C | 0 | > 0 | `GPU state: battery, …` without W throughout; the 7 `bench N/7` lines show `power=battery`, `profile=`, `gt0=` and `throttle=`, and no `battery=` (the grep also shows the `bench start` and `bench done` lines) |
 | D | — | — | no periodic (~1 s) hitch |
 
 ## Risks and upstream-merge impact
@@ -255,11 +256,28 @@ grep -E 'moonlight-intel: bench ' /tmp/ml-0005-c.log
 
 ## Execution notes
 
-- **As designed.** The session ran on the laptop, so the Arch build, the harness and a run
-  against the real `/sys` and system bus all happened there. Implementation choices within the
-  plan:
+- **Changed with the user after the first review (2026-10-26).** The user asked to keep the
+  clock, throttle reasons, profile and power source and to drop the battery watts, as long as
+  nothing is sampled with the overlay hidden in normal use. Two changes on top of the plan:
+  - **Battery draw dropped entirely.** These are gone: `SystemState::batteryW`, the reads of
+    `power_now` / `current_now` × `voltage_now`, the average and the `bench` line's `battery=`
+    field. The battery is never read now.
+    - Goal 3's exception and the Design table's "plus battery power" no longer apply: a sweep
+      reads the same files as the overlay.
+    - The `bench` log loses one field, against Out's "no log format change".
+    - The only ACPI evaluation left is the `online` fallback when UPower fails.
+  - **Mid-stream renderer recreation can no longer wake the sampler.** `appendOverlayStats()`
+    calls `systemStateDemand()` only while the stats overlay (`Overlay::OverlayDebug`) is
+    enabled. To check that, `renderstats.cpp` includes `streaming/session.h`, as `toast.cpp`
+    does. This closes the exception in the finding below.
+  - **A sweep still samples with the overlay hidden.** It is started on purpose (Ctrl+Alt+Shift+T)
+    and lasts about 42 s, and none of its reads evaluates ACPI.
+  - Hardware test C and its criterion now expect 0 power-supply reads and no `battery=` field.
+- **As designed otherwise.** The session ran on the laptop, so the Arch build, the harness and
+  a run against the real `/sys` and system bus all happened there. Implementation choices
+  within the plan:
   - **Reader:** split as allowed. `readOnAc()` reads the Mains `online` files (the fallback) and
-    `read(onAc, batteryPower)` reads the rest. The constructor is unchanged.
+    `read(onAc)` reads the platform profile and GT0. The constructor is unchanged.
   - **Demand timestamp:** a `steady_clock` time point under the sampler's mutex, not an atomic.
     `systemStateDemand()` has to notify under that lock, or an idle sampler can miss the wake-up
     between its check and its wait. The cost is one uncontended lock per overlay refresh.
@@ -272,50 +290,51 @@ grep -E 'moonlight-intel: bench ' /tmp/ml-0005-c.log
   - **QtDBus from the `std::thread` works,** so no `QThread` was needed. The harness made
     blocking calls on the real system bus and on a private bus with no Qt warnings, and
     timeouts and errors came back as expected.
-- **Finding: renderer recreation mid-stream.**
+- **Finding: renderer recreation mid-stream (fixed after review, see above).**
   - `FFmpegVideoDecoder`'s destructor logs "Global video stats" through
     `stringifyVideoStats()`, which calls `appendOverlayStats()`.
   - At stream end that happens after `sessionEnded()`, so it is harmless, as the plan says.
   - It also happens whenever `Session` recreates the renderer during a stream: window events
     that `notifyWindowChanged()` doesn't take, a display change with another refresh rate, or
-    `SDL_RENDER_DEVICE_RESET`. The sampler then wakes for 3 s with the overlay hidden: about 24
-    GT0 / profile reads and 4 UPower calls, but no ACPI evaluation. Goal 2 holds; goal 1 has
-    this exception.
+    `SDL_RENDER_DEVICE_RESET`. In the first version the sampler then woke for 3 s with the
+    overlay hidden: about 24 GT0 / profile reads and 4 UPower calls, but no ACPI evaluation.
+  - On the laptop, the Vulkan and EGL renderers handle size and display changes themselves,
+    so this needs a display with another refresh rate or a device reset. That is not practical
+    as a hardware step, so the harness checks the guard instead.
   - The recreation that every stream logs at start (`Recreating renderer for window event: 1`)
     doesn't count. It comes before the first frame, and `logVideoStats()` skips a decoder that
     rendered no frames. Logs from plans 0003 and 0004 have one recreation per stream, always
     there.
-  - **Possible fix, not done:** call `systemStateDemand()` only while
-    `isOverlayEnabled(Overlay::OverlayDebug)`. `renderstats.cpp` would then include
-    `streaming/session.h`, as `toast.cpp` does. Not done because it changes where the plan puts
-    the call.
 - **Stream end with a hung upowerd:** `stopSystemSampler()` joins the thread, so the main
   thread in `sessionEnded()` can wait for an in-flight UPower call, up to 250 ms. Before this
-  change it could wait for a battery read, up to about 15 ms. This only happens if upowerd
+  plan it could wait for a battery read, up to about 15 ms. This only happens if upowerd
   stops answering, and only once per stream.
-- **Builds.**
+- **Builds** (run again after the review changes, same results):
   - Arch, in a scratch build directory: clean. The only warnings are upstream's two
     `lock_queue` / `unlock_queue` deprecations in `plvk.cpp`, which were there before.
   - Scratch `CONFIG+=disable-libplacebo`: 0 warnings, and no `plvk*` or `qrc_shaders` objects.
   - Without `HAVE_UPOWER`: `systemstate.cpp` compiled with the Arch build's exact command line
     minus the define gives 0 warnings and an object with no QtDBus symbols. The harness's
     `-Wall -Wextra` build without the define is also clean.
-- **Harness (step 4),** scratch, not committed. It runs the real `systemstate.cpp`.
+- **Harness (step 4),** scratch, not committed. It runs the real `systemstate.cpp`, plus the
+  real `renderstats.cpp` against a stub `Session` for the guard.
   - Every `/sys` access is recorded with a timestamp by interposing `fopen`, `open`, `openat`
     and `opendir` (strace isn't installed on the laptop).
   - The fake trees are bind-mounted on `/sys` in a user + mount namespace. A nested user
     namespace maps back to uid 1000, so D-Bus authentication still matches.
   - UPower is a Python mock on a private bus that can answer battery or AC, fail with an error,
     return a string, or reply after 1 s.
-  - 178 checks pass:
+  - The first version passed 178 checks, including the battery reads that were later dropped.
+    After the review changes, 184 checks pass, and every run ends with 0 `power_now`,
+    `current_now` or `voltage_now` opens:
 
 | Run | Checks | Covers |
 |---|---|---|
-| fake `/sys`, mock UPower | 55 | idle: 0 opens in 2 s; start reads each supply's `type` once. Overlay: 0 power-supply value opens, about 8 GT0 opens a second, `battery, balanced, GT0 1450 MHz` with sysfs saying AC, 5 UPower calls in 4 s. Charger in / out seen after 0.76 / 1.00 s. Demand expiry: reads stop 3.00 s after the last call, idle clears the latest state, a new wake publishes after 5 ms. Benchmark on battery: `power_now` once per tick (11 opens, 11 samples), 9.0 W, `current_now` × `voltage_now` fallback, W gone 1.26 s after the sweep. Benchmark with the overlay hidden: awake for 4.5 s, idle within 300 ms after it. Benchmark on AC: no battery reads. UPower failing mid-wake: `online` read once for the rest of the wake, UPower not asked again, logged once per stream, retried on the next wake. Not a bool and the 250 ms timeout (first sample after 244 ms): `online` read once. Stop while idle joins in 0.2 ms; demand after stop starts nothing |
-| fake `/sys`, bus without UPower | 36 | `online` read exactly once per wake over two wakes, `ServiceUnknown` logged once; an AC change shows only at the next wake; the expiry, benchmark and stop checks as above |
-| fake `/sys`, no system bus | 36 | the same, logged as `Disconnected` |
-| fake `/sys`, built without `HAVE_UPOWER` | 36 | the same, and no UPower log |
-| real `/sys` and system bus (on battery) | 15 | overlay: 0 power-supply value opens, 24 GT0 opens in 3 s, `battery, balanced, GT0 idle`. Benchmark: battery power read on each of 8 ticks (5.9 W), `online` never read. No Qt warnings |
+| fake `/sys`, mock UPower | 63 | idle: 0 opens in 2 s; start reads each supply's `type` once. Overlay: 0 power-supply value opens, about 8 GT0 opens a second, `battery, balanced, GT0 1450 MHz` with sysfs saying AC, 5 UPower calls in 4 s. Charger in / out seen after 0.76 / 1.00 s. Demand expiry: reads stop 3.00 s after the last call, idle clears the latest state, a new wake publishes after 5 ms. Benchmark on battery with the overlay shown: 0 power-supply value opens, 4 Hz, no W. Benchmark with the overlay hidden: awake for 4.5 s, idle within 300 ms after it. Guard: `appendOverlayStats()` with no session, with the stats overlay hidden (three calls, 0 opens) or with only the status overlay shown doesn't wake the sampler. With the stats overlay shown it does, and the second refresh has `GPU state: battery, balanced, GT0 1450 MHz`. Benchmark on AC: no battery reads. UPower failing mid-wake: `online` read once for the rest of the wake, UPower not asked again, logged once per stream, retried on the next wake. Not a bool and the 250 ms timeout (first sample after about 245 ms): `online` read once. Stop while idle joins in 0.2 ms; demand after stop starts nothing |
+| fake `/sys`, bus without UPower | 35 | `online` read exactly once per wake (two overlay wakes, and a sweep's own wake), `ServiceUnknown` logged once; an AC change shows only at the next wake; the expiry, benchmark and stop checks as above |
+| fake `/sys`, no system bus | 35 | the same, logged as `Disconnected` |
+| fake `/sys`, built without `HAVE_UPOWER` | 35 | the same, and no UPower log |
+| real `/sys` and system bus (on battery) | 16 | overlay: 0 power-supply value opens, 24 GT0 opens in 3 s, `battery, balanced, GT0 idle`. Benchmark: 8 samples, no battery reads, `online` never read. No Qt warnings |
 
 - **Hardware test commands, checked on the laptop before the PR:**
   - `busctl get-property …` answers `b true` (on battery).
@@ -326,6 +345,6 @@ grep -E 'moonlight-intel: bench ' /tmp/ml-0005-c.log
     `<unfinished ...>` split. They count the AC and USB `online`, `power_now` and the GT0 files,
     and ignore `type` and directory opens.
   - The `bench` grep also prints the `bench start` and `bench done` lines, which are useful
-    context, so the expected text now says which lines carry the watts.
+    context, so the expected text now names the `bench N/7` lines.
   - Nothing else in the app or `moonlight-common-c` reads power supplies, so the counts are
     the fork's alone.

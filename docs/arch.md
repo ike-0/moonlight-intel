@@ -105,10 +105,10 @@ The stats overlay (Ctrl+Alt+Shift+S) shows the choice on its `Scaling` line, e.g
 `(x1.50), fsr1 s0.90 (session), 0.52 ms`: `(session)` means the upscaler or its sharpness differs
 from the settings, and the ms are its share of the video GPU time. The `GPU state` line shows the
 power source, the ACPI platform profile and the GT0 (render) clock, e.g.
-`battery, balanced, GT0 1450 MHz`. The battery's draw (`battery 9.0 W, …`) appears only while a
-benchmark sweep runs: reading it goes through ACPI, which stutters on this machine. The power
-source comes from UPower, so with the overlay hidden and no sweep running the fork reads no
-system state at all, and with it shown none of its reads evaluates ACPI. The line appears from the second overlay
+`battery, balanced, GT0 1450 MHz`. The battery's draw isn't shown, in the overlay or the
+benchmark: reading it goes through ACPI, which stutters on this machine. The power source comes
+from UPower, so with the overlay hidden and no sweep running the fork reads no system state at
+all, and none of its reads evaluates ACPI. The line appears from the second overlay
 refresh, about a second after the overlay opens.
 
 **Benchmark sweep (T).** It runs every upscaler for 1 s (discarded) + 5 s (measured), about
@@ -161,7 +161,7 @@ charger and ~0.66 ms on battery (plan 0002). Always note AC or battery when comp
 Useful while streaming: the stats overlay (Ctrl+Alt+Shift+S) shows decode and render time,
 frame drops and network latency, plus the fork's lines: video GPU time, the scaling step and
 upscaler, and the output colour space when libplacebo renders; the GPU state (power source,
-platform profile, GT0 clock; battery W during a sweep) and the desktop-HDR state with any renderer. More libplacebo detail: `PLVK_LOG_LEVEL=4` (info), which also
+platform profile, GT0 clock) and the desktop-HDR state with any renderer. More libplacebo detail: `PLVK_LOG_LEVEL=4` (info), which also
 logs the surface format and colour space libplacebo picks ("Picked surface configuration").
 
 Logs can contain the host's IP and name. Only share them through the `grep` above, and redact
