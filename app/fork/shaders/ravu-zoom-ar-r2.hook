@@ -12,6 +12,8 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+// Modified by moonlight-intel (2026-10): this header line only; shader unchanged
+
 //!DESC RAVU-Zoom-AR (luma, r2, compute)
 //!HOOK LUMA
 //!BIND HOOKED

@@ -18,6 +18,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+// Modified by moonlight-intel (2026-10): SHARPNESS and FSR_PQ are //!PARAMs set at runtime (DYNAMIC float, DEFINE); their #define lines removed
+
 // FidelityFX FSR v1.0.2 by AMD
 // ported to mpv by agyild
 
@@ -31,6 +33,20 @@
 // Per AMD's guidelines only upscales content up to 4x (e.g., 1080p -> 2160p, 720p -> 1440p etc.) and everything else in between,
 // that means FSR will scale up to 4x at maximum, and any further scaling will be processed by mpv's scalers
 
+//!PARAM SHARPNESS
+//!DESC RCAS sharpening reduction in stops: 0.0 = strongest, 2.0 = weakest
+//!TYPE DYNAMIC float
+//!MINIMUM 0.0
+//!MAXIMUM 2.0
+0.2
+
+//!PARAM FSR_PQ
+//!DESC 1 when the source is PQ-encoded; set per frame by moonlight-intel
+//!TYPE DEFINE
+//!MINIMUM 0
+//!MAXIMUM 1
+0
+
 //!HOOK LUMA
 //!BIND HOOKED
 //!SAVE EASUTEX
@@ -41,7 +57,6 @@
 //!COMPONENTS 1
 
 // User variables - EASU
-#define FSR_PQ 0 // Whether the source content has PQ gamma or not. Needs to be set to the same value for both passes. 0 or 1.
 #define FSR_EASU_DERING 1 // If set to 0, disables deringing for a small increase in performance. 0 or 1.
 #define FSR_EASU_SIMPLE_ANALYSIS 0 // If set to 1, uses a simpler single-pass direction and length analysis for an increase in performance. 0 or 1.
 #define FSR_EASU_QUIT_EARLY 0 // If set to 1, uses bilinear filtering for non-edge pixels and skips EASU on those regions for an increase in performance. 0 or 1.
@@ -368,9 +383,7 @@ vec4 hook() {
 //!COMPONENTS 1
 
 // User variables - RCAS
-#define SHARPNESS 0.2 // Controls the amount of sharpening. The scale is {0.0 := maximum, to N>0, where N is the number of stops (halving) of the reduction of sharpness}. 0.0 to 2.0.
 #define FSR_RCAS_DENOISE 1 // If set to 1, lessens the sharpening on noisy areas. Can be disabled for better performance. 0 or 1.
-#define FSR_PQ 0 // Whether the source content has PQ gamma or not. Needs to be set to the same value for both passes. 0 or 1.
 
 // Shader code
 

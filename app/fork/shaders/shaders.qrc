@@ -1,0 +1,9 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <!-- moonlight-intel: upscaler hooks, parsed on first use by fork/plvkscaler.cpp -->
+    <qresource prefix="/fork/shaders">
+        <file>FSR.glsl</file>
+        <file>NVScaler.glsl</file>
+        <file>ravu-zoom-ar-r2.hook</file>
+    </qresource>
+</RCC>

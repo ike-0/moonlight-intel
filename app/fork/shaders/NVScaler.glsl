@@ -19,6 +19,8 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+// Modified by moonlight-intel (2026-10): NIS_SHARPNESS_PCT and NIS_HDR_MODE are //!PARAMs set at runtime (DEFINE); SHARPNESS derives from NIS_SHARPNESS_PCT; NIS_HDR_MODE #define removed
+
 // NVIDIA Image Scaling v1.0.2 by NVIDIA
 // ported to mpv by agyild
 
@@ -26,6 +28,20 @@
 // Made it directly operate on LUMA plane, since the original shader was operating
 // on LUMA by deriving it from RGB. This should cause a major increase in performance,
 // especially on OpenGL 4.0+ renderers
+
+//!PARAM NIS_SHARPNESS_PCT
+//!DESC Sharpness in percent; set by moonlight-intel
+//!TYPE DEFINE
+//!MINIMUM 0
+//!MAXIMUM 100
+25
+
+//!PARAM NIS_HDR_MODE
+//!DESC 1 when the source is PQ-encoded; set per frame by moonlight-intel
+//!TYPE DEFINE
+//!MINIMUM 0
+//!MAXIMUM 1
+0
 
 //!HOOK LUMA
 //!BIND HOOKED
@@ -38,9 +54,8 @@
 //!HEIGHT OUTPUT.h
 
 // User variables
-#define SHARPNESS 0.25 // Amount of sharpening. 0.0 to 1.0.
+#define SHARPNESS (float(NIS_SHARPNESS_PCT) / 100.0)
 #define NIS_THREAD_GROUP_SIZE 256 // May be set to 128 for better performance on NVIDIA hardware, otherwise set to 256. Don't forget to modify the COMPUTE directive accordingly as well (e.g., COMPUTE 32 24 128 1).
-#define NIS_HDR_MODE 0 // Must be set to 1 for content with PQ colorspace. 0 or 1.
 
 // Constant variables
 #define NIS_BLOCK_WIDTH 32
