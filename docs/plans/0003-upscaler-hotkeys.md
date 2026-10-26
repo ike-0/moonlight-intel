@@ -757,6 +757,45 @@ was flagged `lowframes`. The table under Hardware test has the battery columns; 
     passes don't scale linearly with the clock.
   - The results PR should compare clocks before comparing scalers. Repeated sweeps help.
 
+**Visual check (user, 2026-10-26).** The user captured the same TestUFO crop with each scaler,
+plus a native 2880×1800 stream. Native needed a different host display scale, so it isn't
+pixel-aligned with the others. FSR 1 s0.90 and RAVU looked the most natural; Spline36, Lanczos
+and EWA rang; NIS s0.25 overdid the sharpening.
+
+*Measured on the captures.* The seven upscaled crops are pixel-aligned. A halo is a pixel beyond
+the local range of the bilinear crop (7×7) next to an edge.
+
+| Scaler | Dark halos, avg | Edge pixels with a halo > 8 levels | Gradient vs bilinear |
+|---|---|---|---|
+| ravu-zoom-ar-r2 | 0.24 | 8.5 % | 1.22 |
+| fsr1 s0.90 | 0.55 | 8.6 % | 1.21 |
+| spline36 / lanczos / ewa | 0.87–1.00 | 10.8–13.1 % | 1.24–1.26 |
+| nis s0.25 | 4.12 | 36.8 % | 1.64 |
+
+*Ground-truth test (scratch harness, the real `PlvkScaler`).*
+- **Method:** `native.png` was cropped to 726×405 and downscaled 1.5× (box, and separately
+  bicubic) to a 484×270 synthetic source. It was encoded like the stream (8-bit BT.709 4:2:0,
+  and 10-bit BT.2020 PQ 4:2:0 with white at 203 nits), upscaled with each configuration and
+  compared with native.
+- **Results, robust across both sources and both transfers:**
+  - **RAVU is the closest to native** in every case (SSIM 0.910 / 0.948 on PQ; halos 1.4–2.8 %).
+  - **NIS on PQ** oversharpens at every setting. At s0.25 it scores below bilinear in SSIM with
+    39–40 % halo pixels. Even s0.00 has 22–24 %.
+    - The cause is the shader's HDR mode, not the slider. With `NIS_HDR_MODE` forced to 0 on PQ
+      input, s0.00 falls to 5–6 % halo with a better SSIM in both tests, and s0.10 is the
+      second-closest configuration on the bicubic source.
+    - On SDR input, NIS is best at s0.10–0.15.
+  - **FSR on PQ:** halos fall with sharpness (s0.90 3–9 %, s0.80 2–7 %, s0.70 0.6–6 %) for
+    almost no loss in gradient (0.92 → 0.90 of native).
+    - With `FSR_PQ` forced to 0 it is sharper but rings much more (s0.90: 19–22 %). So its PQ mode
+      is what makes it look clean.
+  - **Spline36 / Lanczos / EWA** carry 6–8 % halo pixels. libplacebo's
+    `pl_filter_config.antiring = 0.8` cuts that to 1–2.6 % at about the same SSIM. Anti-ringing
+    is out of scope for this plan (see Scope); it's a candidate follow-up.
+- **Caveats:** the source is a downscaled SDR screenshot of text, not a host render at
+  1920×1200; metrics are on luma only (the hooks scale luma, chroma is bilinear); games may
+  rank differently.
+
 **Findings for the results PR.**
 - GT0's SLPC power profile (`tile0/gt0/freq0/power_profile`) was `[power_saving]` on battery and
   `[base]` after the charger was connected, during this session. It likely explains much of the
