@@ -971,6 +971,7 @@ void PlVkRenderer::cleanupRenderContext()
     // We have to submit a pending swapchain frame before shutting down
     // in order to release a mutex that pl_swapchain_start_frame() acquires.
     if (m_HasPendingSwapchainFrame) {
+        Fork::SurfaceCommitLock commitLock; // moonlight-intel: the present commits the surface
         pl_swapchain_submit_frame(m_Swapchain);
         m_HasPendingSwapchainFrame = false;
     }
@@ -1108,6 +1109,7 @@ void PlVkRenderer::renderFrame(AVFrame *frame)
 
     // Submit the frame for display and swap buffers
     m_HasPendingSwapchainFrame = false;
+    Fork::SurfaceCommitLock commitLock; // moonlight-intel: the present commits the surface
     if (!pl_swapchain_submit_frame(m_Swapchain)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "pl_swapchain_submit_frame() failed");
