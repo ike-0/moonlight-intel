@@ -583,9 +583,11 @@ mkdir -p build && cd build && qmake6 ../moonlight-qt.pro && make -j"$(nproc)" re
     its PQ mode moved such detail by up to 2 % of the code range, while smooth areas matched
     bilinear.
   - Fill in the subjective table below on the game scene.
-- **A2. Visual recheck after deviation 10:** capture the same crop as before for NIS (at 0.25 and
-  at 0.00) and for Lanczos / EWA. Compare: NIS's halos and the Lanczos family's ringing should
-  be clearly smaller than in the first captures.
+- **A2. Visual recheck after deviation 10** (done 2026-10-26: the Lanczos family looks a lot
+  better):
+  - Capture the same crop as before for Lanczos / EWA. Their ringing should be clearly smaller
+    than in the first captures.
+  - NIS is as in the first captures; try it at 0.00–0.10 on HDR.
 - **B. A/B:** on FSR 1, press B repeatedly. It toggles bilinear ↔ FSR 1 instantly, with no
   hitch after the first time.
 - **C. Sharpness:**
@@ -783,23 +785,44 @@ the local range of the bilinear crop (7×7) next to an edge.
 - **Results, robust across both sources and both transfers:**
   - **RAVU is the closest to native** in every case (SSIM 0.910 / 0.948 on PQ; halos 1.4–2.8 %).
   - **NIS on PQ** oversharpens at every setting. At s0.25 it scores below bilinear in SSIM with
-    39–40 % halo pixels. Even s0.00 has 22–24 %.
-    - The cause is the shader's HDR mode, not the slider. With `NIS_HDR_MODE` forced to 0 on PQ
-      input, s0.00 falls to 5–6 % halo with a better SSIM in both tests, and s0.10 is the
-      second-closest configuration on the bicubic source.
-    - On SDR input, NIS is best at s0.10–0.15.
+    39–40 % halo pixels. Even s0.00 has 22–24 %. On SDR input, NIS is best at s0.10–0.15.
+  - *Wrong lead, corrected below:* in this sRGB comparison, NIS with `NIS_HDR_MODE` forced to 0
+    on PQ input looked much better (s0.00: 5–6 % halo).
   - **FSR on PQ:** halos fall with sharpness (s0.90 3–9 %, s0.80 2–7 %, s0.70 0.6–6 %) for
     almost no loss in gradient (0.92 → 0.90 of native).
     - With `FSR_PQ` forced to 0 it is sharper but rings much more (s0.90: 19–22 %). So its PQ mode
       is what makes it look clean.
   - **Spline36 / Lanczos / EWA** carry 6–8 % halo pixels. libplacebo's
     `pl_filter_config.antiring = 0.8` cuts that to 1–2.6 % at about the same SSIM.
-- **Decided with the user afterwards** (Deviation 10): NIS runs in its SDR mode for every
-  source, and the three libplacebo filters use `antiring = 0.8`.
-  - The image harness confirmed the shipped code gives exactly the measured rows: `nis` on PQ =
-    `nis-…-hdr0`, `lanczos` = `lanczos-ar0.8`.
+- **Decided with the user afterwards** (Deviation 10): the three libplacebo filters use
+  `antiring = 0.8`.
+  - The image harness confirmed the shipped code gives exactly the measured rows: `lanczos` =
+    `lanczos-ar0.8`.
   - A headless A/B (on AC) found no measurable GPU cost for anti-ringing: on and off alternated
     within the clock noise.
+- **NIS's SDR mode on PQ was tried and reverted.** The user's recheck (test A2, s0.25) showed
+  more ringing than before.
+  - The sRGB comparison had clipped everything above the page's white, which hid NIS's bright
+    fringes. Those are the ones that stand out on an HDR panel.
+  - The reason is NIS's luma ramp. In HDR mode, sharpening fades out between PQ 0.35 and 0.55
+    (white text, ~160 nits and up, gets little). In SDR mode it fades between 0.45 and 0.90, so
+    bright PQ text keeps about ⅔ of full strength and a higher limit.
+  - The same renders, measured in 10-bit PQ code values without clipping, at page white 203 and
+    400 nits:
+
+| NIS on PQ | Halo px | Over-white px | Peak over white |
+|---|---|---|---|
+| s0.25, HDR mode | 46 % / 39 % | 1.0 % / 1.0 % | 113 / 126 |
+| s0.25, SDR mode | 45 % / 44 % | 3.3 % / 2.8 % | 202 / 198 |
+| s0.10, HDR mode | 38 % / 33 % | 0.8 % / 0.8 % | 81 / 91 |
+| s0.10, SDR mode | 31 % / 31 % | 1.4 % / 1.3 % | 126 / 123 |
+| s0.00, HDR mode | 33 % / 30 % | 0.8 % / 0.8 % | 81 / 91 |
+| s0.00, SDR mode | 18 % / 19 % | 0.8 % / 0.9 % | 85 / 93 |
+
+  - In the same metric, every other scaler stays at or below 2.9 % halo, except FSR s0.90 at
+    17–18 %, mostly dark, and s0.70 at 6–10 %. Over-white pixels stay at or below 0.02 %.
+  - So NIS keeps its HDR mode on PQ, as the port specifies. On HDR, sharpness 0.00–0.10 is the
+    least bad setting, and NIS remains the scaler that rings most.
 - **Caveats:** the source is a downscaled SDR screenshot of text, not a host render at
   1920×1200; metrics are on luma only (the hooks scale luma, chroma is bilinear); games may
   rank differently.
@@ -874,8 +897,7 @@ deprecation warnings in `plvk.cpp`, which were there before. The scratch
    - A machine with no battery counts as AC.
 9. **Shared helper.** `summarizeGpuTimes()` moved from `plvk.cpp` to `renderstats` for the
    benchmark; `plvk.cpp` lost the fork's `<algorithm>` include with it.
-10. **After the visual check** (decided with the user):
-    - NIS never gets `NIS_HDR_MODE` = 1. The plan said to write it per frame from the source's
-      PQ flag, but its HDR constants oversharpened PQ content even at sharpness 0.
-    - Spline36, Lanczos and EWA get a fixed `antiring = 0.8`. Scope excluded an anti-ringing
-      *slider*; there is still none.
+10. **After the visual check** (decided with the user): Spline36, Lanczos and EWA get a fixed
+    `antiring = 0.8`. Scope excluded an anti-ringing *slider*; there is still none. NIS's SDR
+    mode on PQ was tried and reverted after the user's recheck (Visual check above), so NIS
+    follows the source as planned.

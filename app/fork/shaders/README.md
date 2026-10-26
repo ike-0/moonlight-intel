@@ -51,10 +51,6 @@ Edits:
 - Removed `#define NIS_HDR_MODE 0`.
 - Added, before `//!HOOK`: `//!PARAM NIS_SHARPNESS_PCT` (`DEFINE`, 0–100, default 25) and
   `//!PARAM NIS_HDR_MODE` (`DEFINE`, 0–1, default 0).
-
-  `plvkscaler.cpp` leaves `NIS_HDR_MODE` at 0 for PQ sources too. NIS's HDR constants
-  oversharpened PQ content at every sharpness in plan 0003's visual check, and SDR mode on PQ
-  came out closer to native. The port's own note says the mode is needed for PQ.
 - Added the "Modified by" line.
 
 ### `ravu-zoom-ar-r2.hook`: RAVU-Zoom-AR, radius 2, compute variant

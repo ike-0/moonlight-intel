@@ -21,11 +21,9 @@ struct HookInfo
     const char* pqParam;         // 1 for a PQ-encoded source
 };
 
-// NIS gets no PQ parameter: its NIS_HDR_MODE oversharpened PQ content at every sharpness in
-// plan 0003's visual check, so it stays at the shader's default 0 (SDR mode) for all sources
 static const HookInfo k_Hooks[] = {
     { IntelPreferences::SC_FSR1, ":/fork/shaders/FSR.glsl", "SHARPNESS", "FSR_PQ" },
-    { IntelPreferences::SC_NIS, ":/fork/shaders/NVScaler.glsl", "NIS_SHARPNESS_PCT", nullptr },
+    { IntelPreferences::SC_NIS, ":/fork/shaders/NVScaler.glsl", "NIS_SHARPNESS_PCT", "NIS_HDR_MODE" },
     { IntelPreferences::SC_RAVU_ZOOM_AR_R2, ":/fork/shaders/ravu-zoom-ar-r2.hook", nullptr, nullptr },
 };
 

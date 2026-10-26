@@ -91,9 +91,8 @@ With the Vulkan (libplacebo) renderer (HDR streams, or SDR with "Use Vulkan (lib
 renderer for SDR streams"), Settings → `moonlight-intel` → Upscaler picks how the stream is
 scaled up to the window: Bilinear (the default), Spline36, Lanczos, EWA Lanczos Sharp, FSR 1,
 NIS or RAVU-Zoom-AR r2, plus FSR 1 / NIS sharpness and debanding. Spline36, Lanczos and EWA run
-with libplacebo's anti-ringing at 0.8; NIS runs in its SDR mode on HDR streams too, because its
-HDR mode oversharpens (on HDR text, NIS sharpness 0.00–0.10 measured closest to native). Each
-stream starts from these settings. In-stream hotkeys change them for that stream only:
+with libplacebo's anti-ringing at 0.8. NIS rings the most; on HDR streams try sharpness
+0.00–0.10. Each stream starts from these settings. In-stream hotkeys change them for that stream only:
 
 | Ctrl+Alt+Shift + | Action |
 |---|---|
