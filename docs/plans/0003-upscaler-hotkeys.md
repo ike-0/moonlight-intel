@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | In progress |
+| Status | In review |
 | Created | 2026-10-25 |
 | Branch | `claude/0003-upscaler-hotkeys` |
 | PR | — |
@@ -524,27 +524,27 @@ Tooltips:
 
 ## Acceptance criteria
 
-- [ ] Builds cleanly on Arch, and with `CONFIG+=disable-libplacebo` (without libplacebo:
+- [x] Builds cleanly on Arch, and with `CONFIG+=disable-libplacebo` (without libplacebo:
       no plvkscaler and no shader resources; hotkeys toast "needs Vulkan").
-- [ ] No new warnings in touched files.
-- [ ] Upstream files touched only by the listed marked lines: keyboard.cpp 2, plvk.h 2,
+- [x] No new warnings in touched files.
+- [x] Upstream files touched only by the listed marked lines: keyboard.cpp 2, plvk.h 2,
       plvk.cpp 2 new in upstream code (the fork code at the end of plvk.cpp may change).
 - [ ] All seven scalers render on an HDR (PQ) and an SDR stream with no libplacebo errors.
-      The log shows the `scaler … pq=1` / `pq=0` lines.
+      The log shows the `scaler … pq=1` / `pq=0` lines. (Headless: yes, both. Stream: tests A, G.)
 - [ ] Hotkeys U/Y/B/[/]/T behave as specified, never reach the host, and don't alter upstream
       combos.
 - [ ] Hotkey changes don't persist. Settings changes do, and apply at the next stream.
-- [ ] The Scaling line and toasts show `(session)` exactly while the scaler or its sharpness
+- [x] The Scaling line and toasts show `(session)` exactly while the scaler or its sharpness
       differs from the saved settings. Returning to the saved values clears it. A/B and
       benchmark steps don't set it. Covered by the config harness (step 9).
 - [ ] The overlay shows the active scaler, its sharpness, scaler ms, deband ms (when on) and the
-      `GPU state` line. Worst-case overlay text ≤ 1024 bytes (value recorded).
+      `GPU state` line. Worst-case overlay text ≤ 1024 bytes (value recorded: 955).
 - [ ] The benchmark sweep logs 7 `bench` lines + 7 `bench-summary` lines and restores the prior
-      config. Aborting with T restores it too.
-- [ ] Headless table recorded in Execution notes.
-- [ ] `app/fork/shaders/README.md` lists source, revision, SHA-256, licence and edits for each
+      config. Aborting with T restores it too. (Harness with a fake clock: yes. Stream: tests D, E.)
+- [x] Headless table recorded in Execution notes.
+- [x] `app/fork/shaders/README.md` lists source, revision, SHA-256, licence and edits for each
       shader. Vendored headers intact.
-- [ ] `docs/FORK.md` D6/D7 and the licence paragraph; `docs/arch.md` and `CLAUDE.md` updated.
+- [x] `docs/FORK.md` D6/D7 and the licence paragraph; `docs/arch.md` and `CLAUDE.md` updated.
 - [ ] Hardware test results recorded (user).
 
 ## Hardware test (user runs on the laptop)
@@ -556,8 +556,8 @@ git switch claude/0003-upscaler-hotkeys && git pull
 git submodule update --init --recursive
 mkdir -p build && cd build && qmake6 ../moonlight-qt.pro && make -j"$(nproc)" release
 
-# 2. Run (from build/)
-./app/moonlight 2>&1 | tee /tmp/ml-0003.log
+# 2. Run (works from any directory)
+~/repos/moonlight-intel/build/app/moonlight 2>&1 | tee /tmp/ml-0003.log
 ```
 
 **Stream settings:**
@@ -575,6 +575,9 @@ mkdir -p build && cd build && qmake6 ../moonlight-qt.pro && make -j"$(nproc)" re
     `GPU state` line shows `AC`.
   - Expect at most one hitch on the first use of each scaler.
   - Check: no colour cast, no brightness shift, no image offset against bilinear (use B).
+    Look closely at FSR 1 on fine, high-contrast detail (foliage, text): in the headless check
+    its PQ mode moved such detail by up to 2 % of the code range, while smooth areas matched
+    bilinear.
   - Fill in the subjective table below on the game scene.
 - **B. A/B:** on FSR 1, press B repeatedly. It toggles bilinear ↔ FSR 1 instantly, with no
   hitch after the first time.
@@ -652,4 +655,137 @@ grep -E "moonlight-intel:|Renderer '" /tmp/ml-0003.log
 
 ## Execution notes
 
-Filled in by the executing session: deviations from the plan, findings, follow-ups.
+Executed 2026-10-26 on the target laptop (Arch, libplacebo 7.360.1, Mesa 26.2.5).
+
+**Step 1 re-checks.**
+- The Verified facts hold at libplacebo v7.360.1 (`cee9b076`): fast params are
+  `PL_RENDER_DEFAULTS`, HDR hard-disables linearisation and sigmoid in `pass_scale_main()`, and
+  the `DYNAMIC` / `DEFINE` / `CONSTANT` handling is as described. A hook's signature is a hash of
+  its shader text (custom_mpv.c L1611), so "disabled by signature" can be matched against the
+  parsed hook.
+- New fact: libplacebo starts parsing at the **first `//!` anywhere in the text**
+  (custom_mpv.c L1627), not at the first line that starts with one (see Deviations 1).
+- Shaders: agyild's gists at their latest revisions (FSR `2623d743`, 2022-03-06; NIS
+  `05f00864`, 2022-02-24) are byte-identical to the mirror at `9ab0195e`. RAVU matches bjin's
+  blob at `b3f0a59d`.
+- sysfs: one xe card (`card0`). `gt0` has the rcs/ccs/bcs engines and `gt1` has vcs/vecs, so
+  `gt0` is the render GT. The in-stream comparison with gputop (test A) still applies.
+  `freq0/throttle/reasons` reads `none`. Supplies: `AC` (Mains), `BAT0` (Battery: `power_now`,
+  no `current_now`), two ucsi USB supplies (ignored). Platform profiles: low-power, balanced,
+  performance.
+- Read cost: `BAT0/power_now` takes up to 14 ms about once a second (ACPI refresh), and
+  `AC/online` about 1.3 ms (see Deviations 3).
+
+**Headless check (step 8).** Harness, not committed: the real `PlvkScaler`, `scaler.cpp`,
+`systemstate.cpp` and rcc'd shaders render a synthetic 1920×1200 frame to a 2880×1800 offscreen
+target. The frame has a ramp, a zone plate, a checkerboard and thin lines. Frames are paced at
+120 Hz; 1 s settle, then 5 s (601 frames) per row. Conditions: on AC, profile balanced, GT0
+running at 1347 MHz on average. Δ smooth and Δ detail: mean output change against bilinear in
+the ramp and the zone-plate area, in 10-bit code values. Every row had no render errors (0x0, no
+disabled hooks), and the best match against bilinear was at offset 0,0, so no image shift.
+
+| Scaler | P010 PQ → PQ avg / p99 ms | Δp99 | NV12 BT.709 → sRGB avg / p99 ms | Δp99 | Δ smooth PQ / SDR | Δ detail PQ / SDR |
+|---|---|---|---|---|---|---|
+| bilinear | 0.69 / 0.73 | 0 | 0.66 / 0.69 | 0 | 0 / 0 | 0 / 0 |
+| spline36 | 3.24 / 4.19 | +3.46 | 3.54 / 4.25 | +3.56 | −0.4 / −0.5 | −0.1 / −0.2 |
+| lanczos | 4.22 / 4.25 | +3.52 | 4.23 / 4.25 | +3.56 | −0.4 / −0.5 | −0.1 / −0.2 |
+| ewa_lanczossharp | 7.69 / 8.76 | +8.03 | 7.75 / 8.92 | +8.23 | −0.4 / −0.4 | 0.0 / 0.0 |
+| fsr1 s0.90 | 3.15 / 4.11 | +3.38 | 3.00 / 3.87 | +3.18 | −0.3 / −1.1 | **−20.6** / 0.0 |
+| nis s0.25 | 3.62 / 3.96 | +3.24 | 2.69 / 3.60 | +2.90 | −0.2 / −0.3 | −10.3 / −4.1 |
+| ravu-zoom-ar-r2 | 3.99 / 5.40 | +4.68 | 4.22 / 6.89 | +6.20 | −0.2 / −0.3 | −0.1 / −0.1 |
+
+- PQ define swapped (deliberately wrong): FSR with `FSR_PQ=0` on PQ gives Δ detail 0.0, and
+  `FSR_PQ=1` on SDR gives −20.4. NIS mode 0 on PQ gives −4.1, mode 1 on SDR −10.3. So the large
+  detail shifts come from the shaders' PQ modes. FSR's PQ mode runs EASU and RCAS on pow(x, 4)
+  and returns with the fourth root. NIS's HDR mode only changes its sharpening thresholds.
+  Smooth areas match bilinear within ~1 code value in every case: no colour cast and no
+  brightness shift. Test A asks for a look at FSR on fine detail.
+- Passes (PQ, one frame):
+  - fsr1: EASU 1.08 + RCAS 0.51 + main 0.82 ms;
+  - nis: 2.73 + 0.87 ms;
+  - ravu: 3.12 + 0.86 ms;
+  - spline36 / lanczos: three passes (two `ortho (horiz)`, one `ortho (vert)`);
+  - ewa_lanczossharp: two `polar upscaling` passes, plus a 1 ms pass without a description,
+    which counts in the video time but not the scaler time.
+- Debanding: bilinear + deband 1.50 ms (deband passes 0.69); fsr1 + deband: deband passes
+  0.51 ms. Debanding fused with colour decoding counts as deband, so the deband ms is an upper
+  bound.
+- Parse times: FSR < 0.1 ms, NIS 0.1–1 ms, RAVU 10–12 ms, plus pipeline compiles on first
+  render.
+- Run-to-run spread is large (e.g. spline36 PQ 2.53 vs 3.24 ms avg in two runs): GPU clock
+  scaling at a 120 Hz duty cycle. Headless bilinear is 0.69 ms where 0002's AC streams measured
+  0.33–0.47 ms, so headless numbers run high. **The in-stream sweep (tests D, E) is the
+  measurement**. Headless, every non-bilinear scaler misses Δp99 ≤ 2 ms.
+- GT0 `act_freq` sampled at 4 Hz while rendering at 120 Hz: 47 % of samples read 0 (RC6
+  between frames).
+
+**Findings for the results PR.**
+- GT0's SLPC power profile (`tile0/gt0/freq0/power_profile`) was `[power_saving]` on battery and
+  `[base]` after the charger was connected, during this session. It likely explains much of the
+  AC/battery GPU-time gap from 0002. On request it is not logged by this plan.
+- FSR's PQ mode on fine HDR detail (above): worth an A/B look before choosing FSR as the
+  default.
+
+**Harnesses (step 9),** scratch, against the real sources:
+- logic, 124 checks: hotkey matching on QWERTY / Dvorak / AZERTY / Cyrillic through
+  `keyboard.cpp`'s order (fork, then upstream keycodes, then upstream scancodes); config
+  generations and A/B; the session marker (set by a scaler or sharpness change, cleared on
+  return, untouched by A/B and bench steps, reset at session start); the benchmark with a fake
+  clock (settle discarded, stale generations ignored, waits without frames, `lowframes`, 7 + 7
+  lines, restore on done / T / renderer gone / stream end).
+- sysfs, 31 checks: fake trees with files missing one by one, garbage contents, a non-xe card,
+  no supplies at all; RC6 zeros; union of throttle reasons; the sampler thread on the real
+  `/sys`.
+- An offscreen load of `IntelSettingsGroup.qml` with the real `IntelPreferences` (scratch
+  config directory): 0 QML warnings, and the sliders show for FSR 1 / NIS only.
+
+**Buffer.** Worst-case overlay text is 955 of 1024 bytes: upstream 572 (from 0002) plus fork 383,
+with every suffix at once, the widest numbers and a desktop-HDR failure reason. The longest line
+is 79 characters.
+
+**Builds.** The Arch build is clean, apart from upstream's two `lock_queue` / `unlock_queue`
+deprecation warnings in `plvk.cpp`, which were there before. The scratch
+`CONFIG+=disable-libplacebo` build is clean, with 0 warnings and no `plvkscaler` or
+`qrc_shaders` objects.
+
+**Deviations.**
+1. **Shader header lines.** The first "Modified by" lines mentioned `//!PARAMs`, and FSR / NIS
+   failed to parse ("Missing variable type!"; libplacebo starts at the first `//!` anywhere). They
+   now say "PARAM blocks". The shader README warns about it.
+2. **Compression.** rcc only stores a compressed copy that saves at least 70 %. RAVU's hex LUTs
+   save about 55 %, so the plan's "about 1.5 MB after rcc" didn't happen (3.0 MB). The qrc sets
+   `threshold="30"`, giving 1.4 MB.
+3. **Files and threads.**
+   - Toasts and the sysfs sampler are in their own files, `toast.*` and `systemstate.*`, so
+     `scaler.cpp` has no `Session` dependency and the parts can be tested alone.
+   - The sampler runs on its own thread at 4 Hz, not an SDL timer: SDL runs every timer on one
+     thread (upstream's gamepad mouse emulation polls every 10 ms), and the ACPI battery read
+     takes up to 14 ms.
+4. **"Needs Vulkan".** Hotkeys check for an attached `PlvkScaler` (it has rendered a frame and
+   still exists), not for a fresh stats snapshot. A static picture sends no frames, so the
+   snapshot goes stale after 3 s even on Vulkan.
+5. **Benchmark.**
+   - It aborts when the renderer is destroyed for any reason, including a Vulkan → Vulkan
+     recreation: new pipelines compile inside the measure window.
+   - During a sweep the other hotkeys toast "Benchmark running (T aborts)".
+   - The step toasts are two lines (`Benchmark 4/7: ewa_lanczossharp` / `(keep content
+     moving)`): the status overlay's 36 pt font wraps at ~47 characters, and a wrapped overlay
+     loses its outline.
+   - `benchRecordFrame()` has no deband argument (the sweep runs without debanding).
+6. **Overlay width.** Fork overlay lines wrap at `, ` before 85 characters, the 1024 px wrap at
+   20 pt. The plan's full Scaling line reaches ~99 characters. The 0002 `Output` line, up to ~110
+   with a desktop-HDR failure, wraps the same way.
+7. **Marker during A/B and bench** (decided with the user): `(session)` is hidden on the
+   Scaling line while bilinear is on screen for A/B, or a bench step runs. That gives Test H's
+   `bilinear, A/B`. The config's flag and the `session=` log field still follow the plan's rule.
+8. **Small additions.**
+   - `[` / `]` leave A/B, so the change is visible.
+   - B on bilinear toasts "A/B needs an upscaler other than bilinear".
+   - The scaler log line ends with ` ab=1` while bypassed.
+   - New log lines: `scaler <name> hook parsed in X ms (N passes)`, and bench start / done /
+     aborted.
+   - GT0 is the average of the samples where it was running (RC6 reads 0); `idle` when every
+     sample was 0.
+   - A machine with no battery counts as AC.
+9. **Shared helper.** `summarizeGpuTimes()` moved from `plvk.cpp` to `renderstats` for the
+   benchmark; `plvk.cpp` lost the fork's `<algorithm>` include with it.
