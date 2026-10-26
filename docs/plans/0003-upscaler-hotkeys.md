@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | In review |
+| Status | Done |
 | Created | 2026-10-25 |
 | Branch | `claude/0003-upscaler-hotkeys` |
 | PR | ike-0/moonlight-intel PR 5 |
@@ -854,6 +854,16 @@ at least 540 frames (EWA 574). The AC columns are in the results table.
 - **Candidate defaults from the user's ranking:** FSR 1 with sharpness 0.70. That is outside the
   2 ms budget (about +2.9 ms p99 at s0.90 on both power sources), so the results PR has to accept
   that, or revisit the budget.
+
+**Decision (user, 2026-10-26), after PR 5 merged.**
+- **Shipped default stays Bilinear**, so no code change follows. The user runs FSR 1 at
+  sharpness 0.70, set in Settings → `moonlight-intel`.
+- **The budget miss is accepted for this choice:** about +2.9 ms p99, or roughly 3.4–3.8 ms of
+  video GPU time per 8.33 ms frame.
+- **Battery cost:** the battery sweep logged 17.0 W for FSR 1 against 9.0 W for bilinear.
+- **Not recorded in this file:** tests J (EGL) and K (Run C), and the unticked acceptance
+  criteria. They were not separately confirmed before the merge.
+- **Plan 0005** takes the GPU-state sampler's battery reads out of normal streaming.
 
 **Harnesses (step 9),** scratch, against the real sources:
 - logic, 124 checks: hotkey matching on QWERTY / Dvorak / AZERTY / Cyrillic through

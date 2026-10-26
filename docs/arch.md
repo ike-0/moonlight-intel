@@ -104,7 +104,12 @@ with libplacebo's anti-ringing at 0.8. NIS rings the most; on HDR streams try sh
 The stats overlay (Ctrl+Alt+Shift+S) shows the choice on its `Scaling` line, e.g.
 `(x1.50), fsr1 s0.90 (session), 0.52 ms`: `(session)` means the upscaler or its sharpness differs
 from the settings, and the ms are its share of the video GPU time. The `GPU state` line shows the
-power source (with the battery's draw), the ACPI platform profile and the GT0 (render) clock.
+power source, the ACPI platform profile and the GT0 (render) clock, e.g.
+`battery, balanced, GT0 1450 MHz`. The battery's draw isn't shown, in the overlay or the
+benchmark: reading it goes through ACPI, which stutters on this machine. The power source comes
+from UPower, so with the overlay hidden and no sweep running the fork reads no system state at
+all, and none of its reads evaluates ACPI. The line appears from the second overlay
+refresh, about a second after the overlay opens.
 
 **Benchmark sweep (T).** It runs every upscaler for 1 s (discarded) + 5 s (measured), about
 42 s in all, then returns to the previous choice. The host only sends frames when the picture
@@ -141,7 +146,14 @@ gputop -d 1 -n 5 | grep -aE 'Frequency|PID|moonlight|gnome-shell'
 
 # Pull the relevant lines out of a log without IPs or hostnames
 grep -E 'moonlight-intel:|renderer|Renderer|HDR|present mode|libplacebo: (Using|Vulkan)|swapchain' /tmp/ml.log
+
+# Power source as the GPU state line gets it: "b false" on AC, "b true" on battery
+busctl get-property org.freedesktop.UPower /org/freedesktop/UPower org.freedesktop.UPower OnBattery
 ```
+
+If the log says `moonlight-intel: UPower OnBattery unavailable`, the power source comes from sysfs
+`online` instead, read once each time the overlay opens: a charger change then shows only after
+the overlay was closed for more than 3 s and opened again.
 
 GPU timings depend on the power source: the same libplacebo pass measured ~0.4 ms on the
 charger and ~0.66 ms on battery (plan 0002). Always note AC or battery when comparing numbers.

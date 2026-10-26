@@ -182,6 +182,7 @@ static void startBench(char* toast, size_t length)
 
     s_Bench.running = true;
     s_Bench.restore = s_Config;
+    setSystemStateBenchmark(true);
     beginBenchStep(0, toast, length);
 }
 
@@ -191,6 +192,7 @@ static void endBench(const char* reason)
                 "moonlight-intel: bench %s, restoring %s", reason, scalerName(s_Bench.restore.scaler));
 
     s_Bench.running = false;
+    setSystemStateBenchmark(false);
     s_Config = s_Bench.restore;
     commitChange(ScalerSource::Bench);
 }
@@ -222,7 +224,6 @@ static void finishBenchStep(char* toast, size_t length)
     if (!systemStateWindow(&state)) {
         state = {};
         state.gt0MHz = -1;
-        state.batteryW = -1;
         snprintf(state.profile, sizeof(state.profile), "n/a");
         snprintf(state.throttle, sizeof(state.throttle), "n/a");
     }
@@ -240,23 +241,12 @@ static void finishBenchStep(char* toast, size_t length)
         snprintf(gt0, sizeof(gt0), "%s", state.gt0MHz == 0 ? "idle" : "n/a");
     }
 
-    // On AC the battery's power is its charge rate, so it is left out
-    char battery[32] = "";
-    if (state.samples > 0 && !state.onAc) {
-        if (state.batteryW >= 0) {
-            snprintf(battery, sizeof(battery), " battery=%.1f W", state.batteryW);
-        }
-        else {
-            snprintf(battery, sizeof(battery), " battery=n/a");
-        }
-    }
-
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                "moonlight-intel: bench %d/%d scaler=%s sharpness=%s power=%s profile=%s frames=%d video avg=%.2f p99=%.2f max=%.2f ms scaler avg=%.2f ms gt0=%s%s throttle=%s%s",
+                "moonlight-intel: bench %d/%d scaler=%s sharpness=%s power=%s profile=%s frames=%d video avg=%.2f p99=%.2f max=%.2f ms scaler avg=%.2f ms gt0=%s throttle=%s%s",
                 s_Bench.step + 1, kScalerCount, scalerName(scaler), sharpness,
                 state.samples == 0 ? "n/a" : state.onAc ? "AC" : "battery", state.profile,
                 result.frames, result.avgMs, result.p99Ms, maxMs, scalerAvgMs,
-                gt0, battery, state.throttle,
+                gt0, state.throttle,
                 result.frames < k_BenchMinFrames ? " lowframes" : "");
 
     if (s_Bench.step + 1 < kScalerCount) {

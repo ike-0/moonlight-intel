@@ -3,6 +3,8 @@
 #include "fork.h"
 #include "systemstate.h"
 
+#include "streaming/session.h"
+
 #include "SDL_compat.h"
 
 #include <algorithm>
@@ -154,6 +156,13 @@ static void appendScalingLine(char* output, int length, int* offset, const Rende
 
 int appendOverlayStats(char* output, int length, int streamFps)
 {
+    // Keeps the GPU-state sampler awake while the overlay is shown. The decoder's stats log also
+    // comes here when the renderer is recreated mid-stream, which must not wake it.
+    Session* session = Session::get();
+    if (session != nullptr && session->getOverlayManager().isOverlayEnabled(Overlay::OverlayDebug)) {
+        systemStateDemand();
+    }
+
     int offset = 0;
     RenderStatsSnapshot stats;
     bool haveStats = latestRenderStats(&stats);
