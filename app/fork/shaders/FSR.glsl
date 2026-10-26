@@ -18,7 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-// Modified by moonlight-intel (2026-10): SHARPNESS and FSR_PQ are //!PARAMs set at runtime (DYNAMIC float, DEFINE); their #define lines removed
+// Modified by moonlight-intel (2026-10): SHARPNESS and FSR_PQ are PARAM blocks set at runtime (DYNAMIC float, DEFINE); their #define lines removed
 
 // FidelityFX FSR v1.0.2 by AMD
 // ported to mpv by agyild

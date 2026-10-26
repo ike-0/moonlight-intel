@@ -9,6 +9,10 @@ line after it. Edits are limited to the list below; every `//!DESC` line is unch
 the stats overlay finds the scaler's passes by those descriptions. The first commit that added
 these files holds the unmodified originals, so `git log -p` on this directory shows the edits.
 
+Never write `//!` in a comment, even mid-line: libplacebo starts parsing at the first `//!`
+anywhere in the text, so a comment mentioning `//!PARAM` becomes a broken header and the whole
+shader fails to parse ("Missing variable type!").
+
 ## Files
 
 ### `FSR.glsl`: AMD FidelityFX Super Resolution 1.0.2 (EASU + RCAS)
@@ -20,7 +24,7 @@ these files holds the unmodified originals, so `git log -p` on this directory sh
 | Also checked | identical to `shaders/FSR.glsl` in `iwalton3/default-shader-pack` at `9ab0195e` |
 | Licence | MIT, © 2021 Advanced Micro Devices, Inc. |
 | SHA-256, original | `56d8597fc6b7bf6d13f8c3b2bdf1cdc43b06175d51746aab44cf1dca16929b9e` |
-| SHA-256, vendored | `6d08c993ef023e6443a89775a4ebb8cabfa7e8d2c23cd2568201fb9a5abf7785` |
+| SHA-256, vendored | `d23037992cc976fa3d189caef98997eb2e94dabacf651e6d1edc91b9b3d055da` |
 
 Edits:
 - Removed `#define SHARPNESS 0.2` (RCAS pass) and both `#define FSR_PQ 0` lines (EASU and RCAS
@@ -38,7 +42,7 @@ Edits:
 | Also checked | identical to `shaders/NVScaler.glsl` in `iwalton3/default-shader-pack` at `9ab0195e` |
 | Licence | MIT, © 2022 NVIDIA CORPORATION & AFFILIATES |
 | SHA-256, original | `bac778ec0108d272e4dad97794a3c257e65bbebd52aa762f95bce930cbd6b73c` |
-| SHA-256, vendored | `d20020f8b17acc615b79c337b27188c5915222d9a7a3706e5f74082c83a8b8ee` |
+| SHA-256, vendored | `e00b661a8af108f0fc54a018fa4b073e5c68c3aedf3ffbb704d280b577cee0e6` |
 
 Edits:
 - `#define SHARPNESS 0.25` became `#define SHARPNESS (float(NIS_SHARPNESS_PCT) / 100.0)`. It feeds

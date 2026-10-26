@@ -19,7 +19,7 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-// Modified by moonlight-intel (2026-10): NIS_SHARPNESS_PCT and NIS_HDR_MODE are //!PARAMs set at runtime (DEFINE); SHARPNESS derives from NIS_SHARPNESS_PCT; NIS_HDR_MODE #define removed
+// Modified by moonlight-intel (2026-10): NIS_SHARPNESS_PCT and NIS_HDR_MODE are PARAM blocks set at runtime (DEFINE); SHARPNESS derives from NIS_SHARPNESS_PCT; NIS_HDR_MODE #define removed
 
 // NVIDIA Image Scaling v1.0.2 by NVIDIA
 // ported to mpv by agyild
