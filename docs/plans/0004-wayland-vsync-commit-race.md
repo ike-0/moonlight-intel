@@ -119,8 +119,9 @@ wl_display#1.error(wp_linux_drm_syncobj_surface_v1#57, 3, "Release or Acquire po
 - [x] Repro: with the lock, 25 s at full load with no protocol error; without it, an error
       within seconds (table above).
 - [ ] Hardware: frame pacing **on**, HDR, EWA Lanczos Sharp on battery for 60 s with the UFO
-      test scrolling: no disconnect. (2026-10-26: all scalers cycled with no disconnect, but EWA
-      ran 15 s and RAVU 9 s, not 60 s each; test B pending. See Execution notes.)
+      test scrolling: no disconnect. (2026-10-26: no disconnect while cycling all scalers or during
+      the full battery sweep (test B). But EWA ran 15 s + 6 s and RAVU 9 s + 6 s, not 60 s each.
+      See Execution notes.)
 - [x] `docs/FORK.md` updated.
 
 ## Hardware test (user runs on the laptop)
@@ -213,6 +214,12 @@ journalctl --user -b --since "-30min" | grep -c "error in client communication"
 
 - **Interpretation:** before the fix, EWA at this load (8.0–8.2 ms per 8.33 ms frame, about
   100 fps) disconnected 8 s after switching, and the repro within 2 s. It now ran 15 s.
-- **Still open:**
-  - the planned 60 s holds;
-  - test B, the benchmark sweep on battery. It also covers plan 0003's test E.
+- **Test B (same day):** plan 0003's benchmark sweep on battery, with frame pacing on, ran to
+  `bench done`: 7 + 7 lines, config restored, every step at least 540 frames. EWA measured video
+  p99 8.24 ms at 544 frames, so the GPU was saturated, as in the crashes before the fix.
+  - No `connection closed` in the log.
+  - No `error in client communication` in GNOME's journal since 10:20, when the fixed build
+    started.
+- **Still open:** the planned 60 s holds. EWA has run 15 s + 6 s and RAVU 9 s + 6 s without a
+  disconnect. Before the fix, the same load failed within 5–8 s in streams and 2 s in the
+  repro.
