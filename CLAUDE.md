@@ -89,6 +89,12 @@ qmake6 ../moonlight-qt.pro && make -j"$(nproc)" release   # binary: build/app/mo
 - `app/streaming/video/ffmpeg-renderers/pacer/` — frame pacing
 - `app/streaming/session.cpp` — stream setup, decoder capability probing
 - `app/settings/` — preferences; `app/gui/` — QML UI
+- `app/fork/` — the fork's own code (docs/FORK.md): settings (`intelpreferences`), desktop HDR,
+  overlay lines (`renderstats`), upscaler config, hotkeys and benchmark (`scaler`), its
+  libplacebo side (`plvkscaler`), toasts, GPU state sampler (`systemstate`). Upstream files
+  reach it through `fork/fork.h`; plvk also includes `renderstats.h` and `plvkscaler.h`
+- `app/fork/shaders/` — vendored upscaler shaders (FSR 1, NIS, RAVU); provenance, licences and
+  edits in its README
 - `moonlight-common-c/` — streaming protocol (submodule — don't edit)
 
 ## Testing on the target (user runs these; cloud sessions have no Arc GPU)
