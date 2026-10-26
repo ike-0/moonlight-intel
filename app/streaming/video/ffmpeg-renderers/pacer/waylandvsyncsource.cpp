@@ -1,4 +1,5 @@
 #include "waylandvsyncsource.h"
+#include "fork/fork.h" // moonlight-intel
 
 #include <SDL_syswm.h>
 
@@ -49,6 +50,7 @@ bool WaylandVsyncSource::initialize(SDL_Window* window, int)
     // Enqueue our first frame callback
     m_Callback = wl_surface_frame(m_Surface);
     wl_callback_add_listener(m_Callback, &s_FrameListener, this);
+    Fork::SurfaceCommitLock commitLock; // moonlight-intel: never inside a Vulkan present
     wl_surface_commit(m_Surface);
 
     return true;
@@ -74,6 +76,7 @@ void WaylandVsyncSource::frameDone(void* data, struct wl_callback* oldCb, uint32
     // Register for another callback
     me->m_Callback = wl_surface_frame(me->m_Surface);
     wl_callback_add_listener(me->m_Callback, &s_FrameListener, data);
+    Fork::SurfaceCommitLock commitLock; // moonlight-intel: never inside a Vulkan present
     wl_surface_commit(me->m_Surface);
     wl_display_flush(me->m_Display);
 }

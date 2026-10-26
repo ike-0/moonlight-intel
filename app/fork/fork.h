@@ -16,6 +16,20 @@ void initialize();
 bool preferVulkanForSdr();
 bool logGpuTiming();
 
+// Held around every commit of the stream window's Wayland surface, so commits from different
+// threads never interleave. Mesa's Vulkan present (render thread) builds its commit over several
+// requests, and with explicit sync a commit from the frame-pacing vsync source (main thread) in
+// between is a protocol error that makes the compositor drop the connection.
+class SurfaceCommitLock
+{
+public:
+    SurfaceCommitLock();
+    ~SurfaceCommitLock();
+
+    SurfaceCommitLock(const SurfaceCommitLock&) = delete;
+    SurfaceCommitLock& operator=(const SurfaceCommitLock&) = delete;
+};
+
 // Appends the fork's stats overlay lines (GPU render, scaling, output and desktop HDR) at
 // output, which has room for length bytes. Only whole lines are written. Returns the bytes added.
 int appendOverlayStats(char* output, int length, int streamFps);
