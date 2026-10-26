@@ -5,7 +5,7 @@
 | Status | In review |
 | Created | 2026-10-25 |
 | Branch | `claude/0003-upscaler-hotkeys` |
-| PR | 5 |
+| PR | ike-0/moonlight-intel PR 5 |
 
 ## Goal
 
