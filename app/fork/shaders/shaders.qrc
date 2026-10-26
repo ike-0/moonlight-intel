@@ -1,9 +1,11 @@
 <!DOCTYPE RCC>
 <RCC version="1.0">
-    <!-- moonlight-intel: upscaler hooks, parsed on first use by fork/plvkscaler.cpp -->
+    <!-- moonlight-intel: upscaler hooks, parsed on first use by fork/plvkscaler.cpp. rcc only
+         compresses a file that shrinks by its threshold (default 70 %); RAVU's hex LUTs shrink
+         by about 55 %, so the threshold is lowered to store them compressed. -->
     <qresource prefix="/fork/shaders">
-        <file>FSR.glsl</file>
-        <file>NVScaler.glsl</file>
-        <file>ravu-zoom-ar-r2.hook</file>
+        <file threshold="30">FSR.glsl</file>
+        <file threshold="30">NVScaler.glsl</file>
+        <file threshold="30">ravu-zoom-ar-r2.hook</file>
     </qresource>
 </RCC>
