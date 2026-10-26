@@ -102,31 +102,10 @@ bool SystemStateReader::readOnAc() const
     return m_Batteries.empty();
 }
 
-SystemStateReader::Sample SystemStateReader::read(bool onAc, bool batteryPower) const
+SystemStateReader::Sample SystemStateReader::read(bool onAc) const
 {
     Sample sample = {};
     sample.onAc = onAc;
-
-    // On AC the battery's power is its charge rate, so it is only read on battery
-    sample.batteryW = -1;
-    if (batteryPower && !onAc) {
-        double totalW = 0;
-        bool known = false;
-        for (const std::string& dir : m_Batteries) {
-            long long powerUw, currentUa, voltageUv;
-            if (readNumber(dir + "/power_now", &powerUw)) {
-                totalW += llabs(powerUw) / 1e6;
-                known = true;
-            }
-            else if (readNumber(dir + "/current_now", &currentUa) && readNumber(dir + "/voltage_now", &voltageUv)) {
-                totalW += llabs(currentUa) / 1e6 * (voltageUv / 1e6);
-                known = true;
-            }
-        }
-        if (known) {
-            sample.batteryW = totalW;
-        }
-    }
 
     readLine(m_SysRoot + "/firmware/acpi/platform_profile", &sample.profile);
 
@@ -161,17 +140,6 @@ SystemStateReader::Sample SystemStateReader::read(bool onAc, bool batteryPower) 
 
 void formatSystemState(const SystemState& state, char* text, size_t length)
 {
-    char power[32];
-    if (state.onAc) {
-        snprintf(power, sizeof(power), "AC");
-    }
-    else if (state.batteryW >= 0) {
-        snprintf(power, sizeof(power), "battery %.1f W", state.batteryW);
-    }
-    else {
-        snprintf(power, sizeof(power), "battery");
-    }
-
     char gt0[24];
     if (state.gt0MHz > 0) {
         snprintf(gt0, sizeof(gt0), "%d MHz", state.gt0MHz);
@@ -180,7 +148,7 @@ void formatSystemState(const SystemState& state, char* text, size_t length)
         snprintf(gt0, sizeof(gt0), "%s", state.gt0MHz == 0 ? "idle" : "n/a");
     }
 
-    snprintf(text, length, "%s, %s, GT0 %s", power, state.profile, gt0);
+    snprintf(text, length, "%s, %s, GT0 %s", state.onAc ? "AC" : "battery", state.profile, gt0);
 }
 
 namespace
@@ -194,11 +162,6 @@ public:
     {
         m_Samples++;
         m_Last = sample;
-
-        if (sample.batteryW >= 0) {
-            m_BatterySumW += sample.batteryW;
-            m_BatterySamples++;
-        }
 
         // act_freq reads 0 while the GT is in RC6 between frames, so only running samples count
         if (sample.gt0MHz >= 0) {
@@ -224,7 +187,6 @@ public:
         }
 
         state->onAc = m_Last.onAc;
-        state->batteryW = !m_Last.onAc && m_BatterySamples > 0 ? m_BatterySumW / m_BatterySamples : -1;
         snprintf(state->profile, sizeof(state->profile), "%s",
                  m_Last.profile.empty() ? "n/a" : m_Last.profile.c_str());
 
@@ -247,8 +209,6 @@ public:
 private:
     int m_Samples = 0;
     SystemStateReader::Sample m_Last = {};
-    double m_BatterySumW = 0;
-    int m_BatterySamples = 0;
     bool m_FreqKnown = false;
     long long m_FreqSumMHz = 0;
     int m_FreqSamples = 0;
@@ -361,9 +321,8 @@ private:
 // How long one overlay build keeps the sampler awake
 static const std::chrono::milliseconds k_DemandTimeout(3000);
 
-// A thread of its own rather than an SDL timer: the UPower call can block for up to 250 ms, and
-// a benchmark's battery reads go through ACPI and take up to ~15 ms about once a second. Either
-// would hold up every other SDL timer.
+// A thread of its own rather than an SDL timer: the UPower call can block for up to 250 ms, which
+// would hold up every other SDL timer
 static std::mutex s_Lock;
 static std::condition_variable s_Wake;
 static std::thread s_Thread;
@@ -399,11 +358,10 @@ static void samplerMain()
         for (int tick = 1; s_Running && samplerWanted(); tick++) {
             // Publish the first sample right away, then once a second
             bool publish = tick == 1 || tick % 4 == 0;
-            bool benchmark = s_Benchmark;
 
             lock.unlock();
             bool onAc = power.onAc(publish);
-            SystemStateReader::Sample sample = reader.read(onAc, benchmark);
+            SystemStateReader::Sample sample = reader.read(onAc);
             lock.lock();
 
             s_Second.add(sample);

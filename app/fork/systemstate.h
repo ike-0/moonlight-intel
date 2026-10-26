@@ -9,20 +9,19 @@ namespace Fork
 
 // moonlight-intel: power and GPU state for the stats overlay's "GPU state" line and the
 // benchmark log. A sampler thread runs during a stream but only reads while the overlay is shown
-// or a benchmark runs, and never evaluates ACPI outside a benchmark. A missing file reads as n/a;
-// nothing here fails.
+// or a benchmark runs. The battery is never read: ACPI battery reads stutter on the target. A
+// missing file reads as n/a; nothing here fails.
 struct SystemState
 {
     int samples;          // 0 = no data
     bool onAc;            // at the last sample
-    double batteryW;      // average discharge power on battery; < 0 = n/a or on AC
     char profile[24];     // ACPI platform profile at the last sample, or "n/a"
     int gt0MHz;           // average GT0 act_freq of the samples where it was running;
                           // 0 = idle (RC6) in every sample, -1 = n/a
     char throttle[96];    // union of GT0 throttle reasons: "none", e.g. "pl1 thermal", or "n/a"
 };
 
-// "AC, balanced, GT0 1450 MHz", or in a benchmark "battery 8.4 W, low-power, GT0 1100 MHz"
+// "AC, balanced, GT0 1450 MHz" or "battery, low-power, GT0 1100 MHz"
 void formatSystemState(const SystemState& state, char* text, size_t length);
 
 // One sysfs reading. The root is a parameter so the readers can run against a fake tree.
@@ -32,7 +31,6 @@ public:
     struct Sample
     {
         bool onAc;
-        double batteryW;      // < 0 = n/a
         std::string profile;  // empty = n/a
         int gt0MHz;           // -1 = n/a
         bool throttleKnown;
@@ -46,9 +44,8 @@ public:
     // every read, so this is only the fallback for UPower.
     bool readOnAc() const;
 
-    // One sample on the given power source. Battery power goes through ACPI (_BST), so it is
-    // only read with batteryPower set, and only on battery.
-    Sample read(bool onAc, bool batteryPower) const;
+    // One sample of the platform profile and GT0, on the given power source
+    Sample read(bool onAc) const;
 
 private:
     std::string m_SysRoot;
@@ -66,7 +63,7 @@ void stopSystemSampler();
 // sampler.
 void systemStateDemand();
 
-// A benchmark sweep runs (scaler.cpp): sample with the overlay hidden too, and read battery power
+// A benchmark sweep runs (scaler.cpp): sample with the overlay hidden too
 void setSystemStateBenchmark(bool running);
 
 // The last completed second. False before the first second, while idle or without a running
