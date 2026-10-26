@@ -7,6 +7,8 @@
 
 #include "SDL_compat.h"
 
+#include <mutex>
+
 namespace Fork
 {
 
@@ -49,6 +51,18 @@ void initialize()
 bool preferVulkanForSdr()
 {
     return IntelPreferences::get()->vulkanForSdr();
+}
+
+static std::mutex s_SurfaceCommitLock;
+
+SurfaceCommitLock::SurfaceCommitLock()
+{
+    s_SurfaceCommitLock.lock();
+}
+
+SurfaceCommitLock::~SurfaceCommitLock()
+{
+    s_SurfaceCommitLock.unlock();
 }
 
 bool logGpuTiming()
