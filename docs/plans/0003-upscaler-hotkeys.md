@@ -143,8 +143,19 @@ Rejected in planning:
 - `CAS-scaled.glsl`: hard sRGB relinearisation pass, wrong for PQ.
 - FSRCNNX, NNEDI3, ArtCNN: 2× only, ≥ 4 ms.
 - Temporal upscalers (FSR 2+, XeSS, DLSS): need motion vectors.
-- iHD VPP/SFC scaling: moves the cost to the media engine but needs a VA VPP stage; a possible
-  later plan.
+- iHD VPP/SFC scaling:
+  - moves the cost to the media engine, but needs a VA VPP stage (`VAEntrypointVideoProc`) in
+    `vaapi.cpp`, plus an extra surface hop;
+  - on Xe2-LPM, SFC is an 8×8 polyphase AVS scaler with P010 in/out
+    (`vp_render_sfc_xe2_lpm_base.cpp`, `mhw_sfc.h`);
+  - `VA_FILTER_SCALING_HQ` moves scaling to render-engine composition instead (iHD
+    `ddi_vp_functions.cpp` ≈L4201);
+  - a possible later plan.
+- Intel AI super resolution (VPL `mfxExtVPPAISuperResolution`, VA `processing_mode` = HQ):
+  - vpl-gpu-rt `c205262` gates it to `>= MFX_HW_PTL` (Panther Lake, Xe3); Lunar Lake is
+    `MFX_HW_LNL` < PTL;
+  - iHD `53f7ac0` has only the flag, with a TODO, and no consumer on Linux;
+  - not available on this target.
 
 **This repo (intel `411e602`):**
 - `plvk.cpp`:
@@ -254,6 +265,9 @@ sharper.
   (= 0.1 stop).
 - NIS: percent = round(100·s). The default is s = 0.25, the shader default. Hotkey step 0.05.
 - Other scalers have no sharpness. `[` / `]` then toasts "no sharpness for <name>".
+- In the live config, s is held as integer hundredths (0–100). Settings values (0–1 doubles)
+  are rounded to hundredths when a session starts. Sharpness comparisons, e.g. for the session
+  marker, are then exact.
 
 ### Vendored shader edits
 
@@ -305,10 +319,18 @@ README. Then apply only these edits:
 ### Live config and threading
 
 `scaler.cpp` holds the session's live config, protected by a mutex:
-- `{ scaler, sharpness[FSR], sharpness[NIS], debanding, bypass (A/B), generation }`.
+- `{ scaler, sharpness[FSR], sharpness[NIS], debanding, bypass (A/B), generation, session }`.
 - `generation` increments on every change.
-- `Fork::sessionStarted()` (existing hook) resets the config from `IntelPreferences`. Hotkeys
-  change only the live config.
+- `Fork::sessionStarted()` (existing hook) resets the config from `IntelPreferences` and keeps
+  a copy of those values as `saved`. Hotkeys change only the live config.
+- **Session marker:** `session` is recomputed under the mutex on every change, as
+  `scaler != saved.scaler || sharpness[scaler] != saved.sharpness[scaler]`.
+  - Only the active scaler's sharpness counts.
+  - The marker is a comparison, not a sticky flag. Cycling back to the saved scaler and
+    sharpness clears it.
+  - A/B bypass and benchmark steps don't set it: they have their own overlay markers. The
+    comparison uses the underlying scaler, and during a sweep the remembered config.
+  - Debanding can't change in-stream, so it isn't compared.
 - `Fork::sessionEnded()` aborts a running benchmark.
 
 `Fork::currentScalerConfig(ScalerConfig*)` returns a copy. `PlvkScaler::apply()`, on the
@@ -318,7 +340,7 @@ render thread:
      (`&pl_deband_default_params` or NULL) in `m_RenderParams`;
    - parses the needed hook on first use: text from the qrc, parse time logged;
    - logs `moonlight-intel: scaler <name> sharpness=<s> (<native>) deband=<on|off> pq=<0|1>
-     source=<settings|hotkey|bench>`;
+     source=<settings|hotkey|bench> session=<0|1>`;
    - asks plvk to restart its stats windows (see Overlay below).
 2. Every frame: writes `FSR_PQ` / `NIS_HDR_MODE` = `mappedFrame.color.transfer ==
    PL_COLOR_TRC_PQ`, and the sharpness values, into the hook's `pl_hook_par.data`. This is
@@ -344,6 +366,9 @@ All are Ctrl+Alt+Shift+…, key down, consumed (never sent to the host):
 | ] | sharper (+0.05, clamped) | `FSR 1 sharpness 0.95` |
 | [ | softer (−0.05, clamped) | same |
 | T | start / abort the benchmark sweep | `Benchmark 1/7: bilinear (keep content moving)` … `Benchmark done: see log` |
+
+Scaler and sharpness toasts end with ` (session)` while the session marker is set, e.g.
+`Upscaler: Lanczos (session)`.
 
 **Matching** mirrors upstream:
 - Check the SDLK keycode first (`SDLK_u`, `SDLK_y`, `SDLK_b`, `SDLK_RIGHTBRACKET`,
@@ -403,11 +428,14 @@ All are Ctrl+Alt+Shift+…, key down, consumed (never sent to the host):
 ### Overlay
 
 - **Scaling line**, extended from the 0002 format:
-  `Scaling: 1920x1200 -> 2880x1800 (x1.50), fsr1 s0.90, 0.52 ms[, deband 0.21 ms][, A/B][, bench 5/7]`.
+  `Scaling: 1920x1200 -> 2880x1800 (x1.50), fsr1 s0.90[ (session)], 0.52 ms[, deband 0.21 ms][, A/B][, bench 5/7]`.
+  - `(session)`: the scaler or its sharpness differs from the saved settings (see Live config).
+    So you can tell when a hotkey choice won't carry to the next stream.
   - Failure: `… (x1.50), fsr1 failed -> bilinear`.
   - Downscale and 1:1 keep the 0002 wording.
   - `RenderStatsSnapshot` gains `debandAvgMs`, a wider `scaler[40]` holding the formatted name
-    and parameters, `bypass`, `benchStep` and `benchTotal`.
+    and parameters, `session`, `bypass`, `benchStep` and `benchTotal`. plvk copies `session`
+    from the config it last applied, so the marker always matches the scaler on screen.
 - **New line** after `GPU render (video)`:
   `GPU state: AC, balanced, GT0 1450 MHz` / `GPU state: battery 8.4 W, low-power, GT0 1100 MHz`.
   It comes from the sampler and is shown whenever a stream is active, whichever renderer is in
@@ -420,8 +448,8 @@ All are Ctrl+Alt+Shift+…, key down, consumed (never sent to the host):
   - Both buckets stay inside t_video. They are breakdowns, not exclusions.
 - **On a config change**, plvk clears the 1 s stats window and the 5 s log window and re-arms
   the one-time `gpu-pass` list, so numbers never mix two scalers.
-- **Buffer:** re-measure the worst-case overlay text with all suffixes (A/B, bench, deband,
-  battery) and report it in Execution notes. It must stay ≤ 1024 bytes, with fork lines
+- **Buffer:** re-measure the worst-case overlay text with all suffixes (session, A/B, bench,
+  deband, battery) and report it in Execution notes. It must stay ≤ 1024 bytes, with fork lines
   appended whole as in 0002.
 
 ### Settings group (`IntelSettingsGroup.qml`, `IntelPreferences`)
@@ -480,6 +508,8 @@ Tooltips:
 9. **Harnesses** (scratch, not committed):
    - hotkey matching: SDLK first, scancode only for non-Latin syms, upstream combos untouched;
    - config generations and A/B semantics;
+   - the session marker: set by a scaler or sharpness change, cleared when the saved values
+     return, unaffected by A/B and benchmark steps, and reset at session start;
    - benchmark sequencing with a fake clock: settle discard, generation filtering, restore on
      abort;
    - sysfs readers against a fake tree with missing files.
@@ -504,6 +534,9 @@ Tooltips:
 - [ ] Hotkeys U/Y/B/[/]/T behave as specified, never reach the host, and don't alter upstream
       combos.
 - [ ] Hotkey changes don't persist. Settings changes do, and apply at the next stream.
+- [ ] The Scaling line and toasts show `(session)` exactly while the scaler or its sharpness
+      differs from the saved settings. Returning to the saved values clears it. A/B and
+      benchmark steps don't set it. Covered by the config harness (step 9).
 - [ ] The overlay shows the active scaler, its sharpness, scaler ms, deband ms (when on) and the
       `GPU state` line. Worst-case overlay text ≤ 1024 bytes (value recorded).
 - [ ] The benchmark sweep logs 7 `bench` lines + 7 `bench-summary` lines and restores the prior
@@ -562,8 +595,11 @@ mkdir -p build && cd build && qmake6 ../moonlight-qt.pro && make -j"$(nproc)" re
   The log shows `pq=0`, and the overlay shows `Output: … BT.1886`. Re-tick HDR afterwards.
 - **H. Settings persistence:**
   - Pick FSR 1 in the settings, set FSR sharpness to 0.80, and restart Moonlight. The stream
-    starts on FSR 1 (`source=settings` in the log).
-  - Press U: the next stream still starts on FSR 1.
+    starts on FSR 1 (`source=settings` in the log), with no `(session)` on the Scaling line.
+  - Press `]`: `fsr1 s0.85 (session)`. Press `[`: back to `fsr1 s0.80`, no marker.
+  - Press U: `nis s0.25 (session)`. Press B: `bilinear, A/B`. Press B again: back to
+    `nis s0.25 (session)`.
+  - Quit and start a new stream: it starts on FSR 1, s0.80, with no marker.
   - Set the setting back to Bilinear.
 - **I. Hotkeys don't leak:** on the host, focus a text editor and press each fork hotkey. No
   characters may appear. Also check that the upstream combos (S, X, Z, M) still work.
