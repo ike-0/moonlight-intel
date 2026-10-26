@@ -1,4 +1,5 @@
 #include "streaming/session.h"
+#include "fork/fork.h" // moonlight-intel
 
 #include <Limelight.h>
 #include "SDL_compat.h"
@@ -200,6 +201,7 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
             (event->keysym.mod & KMOD_CTRL) &&
             (event->keysym.mod & KMOD_ALT) &&
             (event->keysym.mod & KMOD_SHIFT)) {
+        if (Fork::handleStreamHotkey(event->keysym.sym, event->keysym.scancode)) return; // moonlight-intel
         // First we test the SDLK combos for matches,
         // that way we ensure that latin keyboard users
         // can match to the key they see on their keyboards.

@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | In review |
+| Status | Done |
 | Created | 2026-10-26 |
 | Branch | `claude/0004-wayland-vsync-commit-race` |
 | PR | ike-0/moonlight-intel PR 6 |

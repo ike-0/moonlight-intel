@@ -1,12 +1,16 @@
 #include "renderstats.h"
 #include "desktophdr.h"
 #include "fork.h"
+#include "systemstate.h"
 
 #include "SDL_compat.h"
 
+#include <algorithm>
 #include <cstdarg>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
+#include <string>
 
 namespace Fork
 {
@@ -45,6 +49,22 @@ bool latestRenderStats(RenderStatsSnapshot* snapshot, uint32_t maxAgeMs)
     return true;
 }
 
+void summarizeGpuTimes(std::vector<uint64_t>& samplesNs, double* avgMs, double* p99Ms, double* maxMs)
+{
+    uint64_t sumNs = 0, maxNs = 0;
+    for (uint64_t ns : samplesNs) {
+        sumNs += ns;
+        maxNs = std::max(maxNs, ns);
+    }
+
+    auto p99 = samplesNs.begin() + (samplesNs.size() - 1) * 99 / 100;
+    std::nth_element(samplesNs.begin(), p99, samplesNs.end());
+
+    *avgMs = sumNs / 1e6 / samplesNs.size();
+    *p99Ms = *p99 / 1e6;
+    *maxMs = maxNs / 1e6;
+}
+
 // Appends one formatted line, or nothing if the whole line doesn't fit,
 // so a short buffer never ends in a cut-off line
 static void appendLine(char* output, int length, int* offset,
@@ -68,6 +88,70 @@ static void appendLine(char* output, int length, int* offset, const char* format
     *offset += ret;
 }
 
+// The overlay wraps a line wider than 1024 px and then draws all of its text without the
+// outline. At the stats overlay's 20 pt that is 85 characters.
+static const size_t k_OverlayLineChars = 85;
+
+// Appends text as one line or, if it is too wide for the overlay, as several: each break goes
+// after the last ", " that fits, and continuation lines are indented
+static void appendWrappedLine(char* output, int length, int* offset, const char* text)
+{
+    std::string rest = text;
+    const char* indent = "";
+    while (strlen(indent) + rest.size() > k_OverlayLineChars) {
+        size_t split = rest.rfind(", ", k_OverlayLineChars - strlen(indent) - 1);
+        if (split == std::string::npos || split == 0) {
+            break;
+        }
+
+        appendLine(output, length, offset, "%s%s\n", indent, rest.substr(0, split + 1).c_str());
+        rest.erase(0, split + 2);
+        indent = "  ";
+    }
+
+    appendLine(output, length, offset, "%s%s\n", indent, rest.c_str());
+}
+
+// "Scaling: 1920x1200 -> 2880x1800 (x1.50), fsr1 s0.90 (session), 0.52 ms, deband 0.21 ms, A/B, bench 5/7"
+static void appendScalingLine(char* output, int length, int* offset, const RenderStatsSnapshot& stats)
+{
+    double ratio = (double)stats.targetWidth / stats.sourceWidth;
+    char step[80];
+    if (stats.targetWidth == stats.sourceWidth && stats.targetHeight == stats.sourceHeight) {
+        snprintf(step, sizeof(step), "1:1");
+    }
+    else if (ratio < 1.0) {
+        snprintf(step, sizeof(step), "downscale (x%.2f)", ratio);
+    }
+    else {
+        // The marker belongs to the chosen scaler, so it is hidden while another one is on
+        // screen (A/B bypass, a benchmark step)
+        bool session = stats.session && !stats.bypass && stats.benchStep == 0;
+        snprintf(step, sizeof(step), "(x%.2f), %s%s", ratio, stats.scaler, session ? " (session)" : "");
+    }
+
+    char scalingTime[24] = "";
+    if (stats.scalingAvgMs > 0) {
+        snprintf(scalingTime, sizeof(scalingTime), ", %.2f ms", stats.scalingAvgMs);
+    }
+
+    char debandTime[32] = "";
+    if (stats.debandAvgMs > 0) {
+        snprintf(debandTime, sizeof(debandTime), ", deband %.2f ms", stats.debandAvgMs);
+    }
+
+    char bench[24] = "";
+    if (stats.benchStep > 0) {
+        snprintf(bench, sizeof(bench), ", bench %d/%d", stats.benchStep, stats.benchTotal);
+    }
+
+    char line[256];
+    snprintf(line, sizeof(line), "Scaling: %dx%d -> %dx%d %s%s%s%s%s",
+             stats.sourceWidth, stats.sourceHeight, stats.targetWidth, stats.targetHeight,
+             step, scalingTime, debandTime, stats.bypass ? ", A/B" : "", bench);
+    appendWrappedLine(output, length, offset, line);
+}
+
 int appendOverlayStats(char* output, int length, int streamFps)
 {
     int offset = 0;
@@ -88,40 +172,30 @@ int appendOverlayStats(char* output, int length, int streamFps)
                        "GPU render (video): %.2f ms avg / %.2f p99 / %.2f max\n",
                        stats.gpuAvgMs, stats.gpuP99Ms, stats.gpuMaxMs);
         }
+    }
 
-        if (stats.sourceWidth > 0) {
-            double ratio = (double)stats.targetWidth / stats.sourceWidth;
-            char step[64];
-            if (stats.targetWidth == stats.sourceWidth && stats.targetHeight == stats.sourceHeight) {
-                snprintf(step, sizeof(step), "1:1");
-            }
-            else if (ratio < 1.0) {
-                snprintf(step, sizeof(step), "downscale (x%.2f)", ratio);
-            }
-            else {
-                snprintf(step, sizeof(step), "(x%.2f), %s", ratio, stats.scaler);
-            }
+    // The power and GPU state are shown whichever renderer is active
+    SystemState system;
+    if (latestSystemState(&system)) {
+        char state[96];
+        formatSystemState(system, state, sizeof(state));
+        appendLine(output, length, &offset, "GPU state: %s\n", state);
+    }
 
-            char scalingTime[32] = "";
-            if (stats.scalingAvgMs > 0) {
-                snprintf(scalingTime, sizeof(scalingTime), ", %.2f ms", stats.scalingAvgMs);
-            }
-
-            appendLine(output, length, &offset, "Scaling: %dx%d -> %dx%d %s%s\n",
-                       stats.sourceWidth, stats.sourceHeight,
-                       stats.targetWidth, stats.targetHeight,
-                       step, scalingTime);
-        }
+    if (haveStats && stats.sourceWidth > 0) {
+        appendScalingLine(output, length, &offset, stats);
     }
 
     // The desktop-HDR state is shown whichever renderer is active
     QByteArray desktopHdr = DesktopHdrController::statusText().toLatin1();
     if (haveStats) {
-        appendLine(output, length, &offset, "Output: %dx%d %s %s%s%s\n",
-                   stats.swapchainWidth, stats.swapchainHeight,
-                   stats.swapchainTransfer, stats.swapchainPrimaries,
-                   desktopHdr.isEmpty() ? "" : ", desktop HDR: ",
-                   desktopHdr.constData());
+        char line[192];
+        snprintf(line, sizeof(line), "Output: %dx%d %s %s%s%s",
+                 stats.swapchainWidth, stats.swapchainHeight,
+                 stats.swapchainTransfer, stats.swapchainPrimaries,
+                 desktopHdr.isEmpty() ? "" : ", desktop HDR: ",
+                 desktopHdr.constData());
+        appendWrappedLine(output, length, &offset, line);
     }
     else if (!desktopHdr.isEmpty()) {
         appendLine(output, length, &offset, "Desktop HDR: %s\n", desktopHdr.constData());

@@ -243,23 +243,35 @@ HEADERS += \
     streaming/video/overlaymanager.h \
     backend/systemproperties.h
 
-# moonlight-intel: fork module (docs/FORK.md). Must not depend on libplacebo.
+# moonlight-intel: fork module (docs/FORK.md). The core must not depend on libplacebo;
+# the parts that do are in the libplacebo section below.
 SOURCES += \
     fork/fork.cpp \
     fork/intelpreferences.cpp \
     fork/renderstats.cpp \
-    fork/desktophdr.cpp
+    fork/desktophdr.cpp \
+    fork/scaler.cpp \
+    fork/systemstate.cpp \
+    fork/toast.cpp
 HEADERS += \
     fork/fork.h \
     fork/intelpreferences.h \
     fork/renderstats.h \
     fork/desktophdr.h \
-    fork/desktophdrbackend.h
+    fork/desktophdrbackend.h \
+    fork/scaler.h \
+    fork/systemstate.h \
+    fork/toast.h
 linux:qtHaveModule(dbus) {
     QT += dbus
     DEFINES += HAVE_GNOME_DISPLAY_CONFIG
     SOURCES += fork/gnomedisplayconfig.cpp
     HEADERS += fork/gnomedisplayconfig.h
+}
+libplacebo {
+    SOURCES += fork/plvkscaler.cpp
+    HEADERS += fork/plvkscaler.h
+    RESOURCES += fork/shaders/shaders.qrc
 }
 
 # Platform-specific renderers and decoders

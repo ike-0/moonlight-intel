@@ -112,5 +112,143 @@ GroupBox {
             ToolTip.visible: hovered
             ToolTip.text: qsTr("Renders SDR streams through libplacebo, like HDR streams, so the moonlight-intel overlay readouts and upscaler apply. Off = upstream behaviour (EGL). Takes effect at the next stream.")
         }
+
+        Label {
+            width: parent.width
+            id: upscalerTitle
+            text: qsTr("Upscaler")
+            font.pointSize: 12
+            wrapMode: Text.Wrap
+        }
+
+        AutoResizingComboBox {
+            // ignore setting the index at first, and actually set it when the component is loaded
+            Component.onCompleted: {
+                var savedUpscaler = IntelPreferences.upscaler
+                currentIndex = 0
+                for (var i = 0; i < upscalerListModel.count; i++) {
+                    if (savedUpscaler === upscalerListModel.get(i).val) {
+                        currentIndex = i
+                        break
+                    }
+                }
+                activated(currentIndex)
+            }
+
+            id: upscalerComboBox
+            hoverEnabled: true
+            textRole: "text"
+            model: ListModel {
+                id: upscalerListModel
+                ListElement {
+                    text: qsTr("Bilinear (off)")
+                    val: IntelPreferences.SC_BILINEAR
+                }
+                ListElement {
+                    text: qsTr("Spline36")
+                    val: IntelPreferences.SC_SPLINE36
+                }
+                ListElement {
+                    text: qsTr("Lanczos")
+                    val: IntelPreferences.SC_LANCZOS
+                }
+                ListElement {
+                    text: qsTr("EWA Lanczos Sharp")
+                    val: IntelPreferences.SC_EWA_LANCZOSSHARP
+                }
+                ListElement {
+                    text: qsTr("FSR 1 (EASU + RCAS)")
+                    val: IntelPreferences.SC_FSR1
+                }
+                ListElement {
+                    text: qsTr("NIS (NVIDIA Image Scaling)")
+                    val: IntelPreferences.SC_NIS
+                }
+                ListElement {
+                    text: qsTr("RAVU-Zoom-AR r2")
+                    val: IntelPreferences.SC_RAVU_ZOOM_AR_R2
+                }
+            }
+            // ::onActivated must be used, as it only listens for when the index is changed by a human
+            onActivated: {
+                IntelPreferences.upscaler = upscalerListModel.get(currentIndex).val
+            }
+
+            ToolTip.delay: 1000
+            ToolTip.timeout: 5000
+            ToolTip.visible: hovered
+            ToolTip.text: qsTr("How the stream is scaled up to the window. Applies only with the Vulkan (libplacebo) renderer: HDR streams, or SDR streams with \"Use Vulkan (libplacebo) renderer for SDR streams\". EWA Lanczos Sharp is the most expensive.")
+        }
+
+        Label {
+            width: parent.width
+            id: fsrSharpnessTitle
+            visible: IntelPreferences.upscaler === IntelPreferences.SC_FSR1
+            text: qsTr("FSR 1 sharpness: %1").arg(fsrSharpnessSlider.value.toFixed(2))
+            font.pointSize: 12
+            wrapMode: Text.Wrap
+        }
+
+        Slider {
+            id: fsrSharpnessSlider
+            visible: fsrSharpnessTitle.visible
+            width: parent.width
+            from: 0
+            to: 1
+            stepSize: 0.05
+            snapMode: "SnapAlways"
+            value: IntelPreferences.fsrSharpness
+            onMoved: {
+                IntelPreferences.fsrSharpness = value
+            }
+        }
+
+        Label {
+            width: parent.width
+            id: nisSharpnessTitle
+            visible: IntelPreferences.upscaler === IntelPreferences.SC_NIS
+            text: qsTr("NIS sharpness: %1").arg(nisSharpnessSlider.value.toFixed(2))
+            font.pointSize: 12
+            wrapMode: Text.Wrap
+        }
+
+        Slider {
+            id: nisSharpnessSlider
+            visible: nisSharpnessTitle.visible
+            width: parent.width
+            from: 0
+            to: 1
+            stepSize: 0.05
+            snapMode: "SnapAlways"
+            value: IntelPreferences.nisSharpness
+            onMoved: {
+                IntelPreferences.nisSharpness = value
+            }
+        }
+
+        CheckBox {
+            id: debandingCheck
+            width: parent.width
+            hoverEnabled: true
+            text: qsTr("Debanding (libplacebo)")
+            font.pointSize: 12
+            checked: IntelPreferences.debanding
+            onCheckedChanged: {
+                IntelPreferences.debanding = checked
+            }
+
+            ToolTip.delay: 1000
+            ToolTip.timeout: 5000
+            ToolTip.visible: hovered
+            ToolTip.text: qsTr("Smooths banding in dark gradients (sky, fog) before upscaling, at some GPU cost. Vulkan (libplacebo) renderer only.")
+        }
+
+        Label {
+            width: parent.width
+            id: upscalerHotkeysLabel
+            text: qsTr("In-stream hotkeys, with Ctrl+Alt+Shift: U / Y next / previous upscaler, B A/B against bilinear, [ / ] softer / sharper, T benchmark sweep. Hotkey changes last for the current stream only.")
+            font.pointSize: 9
+            wrapMode: Text.Wrap
+        }
     }
 }

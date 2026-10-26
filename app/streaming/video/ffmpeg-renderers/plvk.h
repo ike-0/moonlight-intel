@@ -13,6 +13,7 @@
 #include <string> // moonlight-intel
 #include <vector> // moonlight-intel
 #include "fork/renderstats.h" // moonlight-intel
+#include "fork/plvkscaler.h" // moonlight-intel
 
 #ifdef Q_OS_DARWIN
 class MetalVulkanTextureFactory {
@@ -155,14 +156,17 @@ private:
     PFN_vkGetPhysicalDeviceSurfaceSupportKHR fn_vkGetPhysicalDeviceSurfaceSupportKHR = nullptr;
     PFN_vkEnumerateDeviceExtensionProperties fn_vkEnumerateDeviceExtensionProperties = nullptr;
 
-    // moonlight-intel: render params for video frames (defaults to pl_render_fast_params),
-    // frame/swapchain info logging, GPU timing and render stats for the stats overlay. GPU time
-    // is always measured; the log is opt-in (setting or MOONLIGHT_INTEL_GPU_TIMING=1).
+    // moonlight-intel: render params for video frames (pl_render_fast_params plus the upscaler
+    // from m_ForkScaler), frame/swapchain info logging, GPU timing and render stats for the stats
+    // overlay. GPU time is always measured; the log is opt-in (setting or
+    // MOONLIGHT_INTEL_GPU_TIMING=1).
     static void gpuTimingCallback(void* priv, const pl_render_info* info);
     void logFrameInfo(const pl_frame* source);
     void recordRenderStats(const pl_frame* source, const pl_frame* target);
+    void resetRenderStats(Uint32 now);
     void publishRenderStats(const pl_frame* source, const pl_frame* target);
     void logGpuTime(Uint32 now);
+    void logGpuPasses();
 
     struct GpuPass {
         std::string description;
@@ -172,17 +176,24 @@ private:
     };
 
     pl_render_params m_RenderParams;
+    Fork::PlvkScaler m_ForkScaler; // moonlight-intel
     int m_LastFrameInfo[8] = {};
 
-    // Current frame, summed by gpuTimingCallback()
+    // Current frame, summed by gpuTimingCallback(). Scaler and deband passes are part of the
+    // video time.
     uint64_t m_GpuTimeFrameNs = 0;    // video passes, i.e. all but the OSD overlay
     uint64_t m_GpuScalingFrameNs = 0; // scaler passes
+    uint64_t m_GpuDebandFrameNs = 0;  // debanding passes
     std::vector<GpuPass> m_GpuTimePasses;
+
+    // Both windows restart when the scaler config changes, so no number mixes two scalers
+    uint64_t m_StatsScalerGeneration = 0;
 
     // ~1 s window published to the stats overlay
     Fork::RenderStatsPublisher m_RenderStats;
     std::vector<uint64_t> m_StatsSamplesNs;
     uint64_t m_StatsScalingNs = 0;
+    uint64_t m_StatsDebandNs = 0;
     Uint32 m_StatsWindowStart = 0;
 
     // 5 s log window
