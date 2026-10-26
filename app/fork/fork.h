@@ -12,10 +12,6 @@ namespace Fork
 // runs crash recovery. Call once on the GUI thread, before the QML engine loads.
 void initialize();
 
-// Settings read on the decoder/renderer path (lock-free)
-bool preferVulkanForSdr();
-bool logGpuTiming();
-
 // Held around every commit of the stream window's Wayland surface, so commits from different
 // threads never interleave. Mesa's Vulkan present (render thread) builds its commit over several
 // requests, and with explicit sync a commit from the frame-pacing vsync source (main thread) in
@@ -29,6 +25,10 @@ public:
     SurfaceCommitLock(const SurfaceCommitLock&) = delete;
     SurfaceCommitLock& operator=(const SurfaceCommitLock&) = delete;
 };
+
+// Settings read on the decoder/renderer path (lock-free)
+bool preferVulkanForSdr();
+bool logGpuTiming();
 
 // Appends the fork's stats overlay lines (GPU render, scaling, output and desktop HDR) at
 // output, which has room for length bytes. Only whole lines are written. Returns the bytes added.
