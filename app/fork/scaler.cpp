@@ -182,6 +182,7 @@ static void startBench(char* toast, size_t length)
 
     s_Bench.running = true;
     s_Bench.restore = s_Config;
+    setSystemStateBenchmark(true);
     beginBenchStep(0, toast, length);
 }
 
@@ -191,6 +192,7 @@ static void endBench(const char* reason)
                 "moonlight-intel: bench %s, restoring %s", reason, scalerName(s_Bench.restore.scaler));
 
     s_Bench.running = false;
+    setSystemStateBenchmark(false);
     s_Config = s_Bench.restore;
     commitChange(ScalerSource::Bench);
 }

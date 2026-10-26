@@ -264,7 +264,7 @@ HEADERS += \
     fork/toast.h
 linux:qtHaveModule(dbus) {
     QT += dbus
-    DEFINES += HAVE_GNOME_DISPLAY_CONFIG
+    DEFINES += HAVE_GNOME_DISPLAY_CONFIG HAVE_UPOWER
     SOURCES += fork/gnomedisplayconfig.cpp
     HEADERS += fork/gnomedisplayconfig.h
 }

@@ -154,6 +154,9 @@ static void appendScalingLine(char* output, int length, int* offset, const Rende
 
 int appendOverlayStats(char* output, int length, int streamFps)
 {
+    // Keeps the GPU-state sampler awake while the overlay is shown
+    systemStateDemand();
+
     int offset = 0;
     RenderStatsSnapshot stats;
     bool haveStats = latestRenderStats(&stats);
